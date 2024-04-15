@@ -13,7 +13,7 @@ This package includes the following modules:
 
 """
 
-__version__ = '0.1.0'
+__version__ = '1.0.0'
 
 __all__ = ['constants','crystal','tT_path','tT_model']
 
