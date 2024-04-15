@@ -1,4 +1,4 @@
-import PyThermo as pyt
+import pythermo as pyt
 
 def test_alpha_ejection():
     pass
