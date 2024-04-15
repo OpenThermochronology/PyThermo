@@ -4,7 +4,7 @@ tT_path.py
 Contains one class 'tT_path' with methods for interpolating and discretizing time-temperature paths from a select number of time-temperature points. Methods also calculate reduced fission track lengt distributions using an equivalent time approach.
 
 """
-from constants import *
+from .constants import np, sec_per_myr
 
 class tT_path:
     def __init__(self, tTin, temp_precision=1, rate_acceleration=1.5):

@@ -4,7 +4,7 @@ crystal.py
 Class crystal and mineral system specific sub-classes. Contains methods primarly focused on solving the diffusion equation, with production and alpha ejection, using a Crank-Nicolson approach
 
 """
-from constants import *
+from .constants import np, U238_ppm_atom, U235_ppm_atom, Th_ppm_atom, Sm_ppm_atom, lambda_238, lambda_238_yr, lambda_235, lambda_235_yr, lambda_232, lambda_232_yr, lambda_147, lambda_147_yr, lambda_f, gas_constant, ap_density
 from scipy.linalg import solve_banded
 from scipy.integrate import romb
 
@@ -51,7 +51,6 @@ class crystal:
             Various Ft correction factors and total values for parent isotopes in atoms/g
         
         """
-
         #unit conversion for U,Th,Sm inputs to atoms/g
         U238_atom = U_ppm * U238_ppm_atom
         U235_atom = U_ppm * U235_ppm_atom
@@ -201,9 +200,7 @@ class crystal:
             The 1D radial profile of diffused He
 
         """
-
         #set up arrays for tridiagonal matrix
-        
         #u is the coordinate transform vector
         #u = vr, v is the He profile, r is radius 
         u = np.zeros(nodes)
@@ -301,7 +298,6 @@ class crystal:
             The alpha ejection corrected (U-Th)/He date (in Ma)
 
         """
-
         #get the guess to the 1000 year precision, date guess is in years
         tolerance = 1000.0
         date_guess = 100000000.0
@@ -792,7 +788,6 @@ class apatite(crystal):
             List of total amount of damage at each time step of relevant_tT
         
         """
-
         # constants for the e_rho_s calculation, as defined in Flowers et al. (2009)
         eta_q = 0.91
         L = 0.000815

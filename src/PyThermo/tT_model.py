@@ -6,9 +6,9 @@ Particular approaches to forward modeling and plotting apatite and zircon (U-Th)
 """
 import matplotlib.pyplot as plt
 from cycler import cycler
-from constants import *
-from crystal import *
-from tT_path import *
+from .constants import np
+from .crystal import apatite, zircon
+from .tT_path import tT_path
 
 class tT_model:
     def __init__(self, grain_in, tT_in, obs_data=None):
