@@ -27,6 +27,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install matplotlib numpy pandas scipy cycler jupyter-book
+        pip install -e ./pythermo
         pip install flake8 pytest
     - name: Lint with flake8
       run: |
