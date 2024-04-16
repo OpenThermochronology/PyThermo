@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PyThermo"
+dynamic = ["version"]
+authors = [
+  { name="William Guenthner", email="wrg@illinois.edu" },
+]
+description = "Tools for performing computational tasks in the field of low-temperature thermochronology."
+readme = "README.md"
+requires-python = ">=3.7"
+keywords = ["thermochronology","zircon","apatite","geology","diffusion","geochronology"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/OpenThermochronology/PyThermo.py"
