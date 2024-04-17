@@ -7,7 +7,7 @@ Contains one class 'tT_path' with methods for interpolating and discretizing tim
 from .constants import np, sec_per_myr
 
 class tT_path:
-    def __init__(self, tTin, temp_precision=1, rate_acceleration=1.5):
+    def __init__(self, tTin, temp_precision=5, rate_acceleration=1.5):
         """
         Constructor for class tT_path. Assumes input tT path goes from young at index 0 -> old at index -1.
 
@@ -17,11 +17,11 @@ class tT_path:
         tTin: 2D array
             Instance variable, tT points to be interpolated. 1st row is time (in m.y.), 2nd row is temp (in oC)
 
-        precision: optional float
-            Instance variable, default minimal spacing of temperature steps, smaller numbers yield better precision (at the cost of increased run-time)
+        temp_precision: optional float
+            Instance variable, default minimal spacing of temperature steps, smaller numbers yield better precision (at the cost of increased run-time). Default is 5.
 
-        acceleration: optional float
-            Instance variable, default maximum temperature acceleration allowed between time points, smaller numbers yield better precision (at the cost of increased run-time)
+        rate_acceleration: optional float
+            Instance variable, default maximum temperature acceleration allowed between time points, smaller numbers yield better precision (at the cost of increased run-time). Default is 1.5.
 
         """
         self.__tTin = tTin
