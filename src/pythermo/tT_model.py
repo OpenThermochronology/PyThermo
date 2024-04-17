@@ -53,7 +53,7 @@ class tT_model:
             Number of model comparisons if comp_type = 'model'. Corresponds to number of curves per tT path. Default is 1.
                 
         std_grain: optional float
-            The 2 sigma standard deviation in grain size for grain size comparison runs. Can be used if obs_data is 'None'. Default is 0.
+            The user-defined 2 sigma standard deviation in grain size for grain size comparison runs. Can be used if obs_data is 'None'. Default is 0.
         
         log2_nodes: optional int
             The number of nodes (2**log2_nodes + 1) used in the Crank-Nicolson diffusion solver. Default is 9 (512 nodes + 1).
@@ -74,21 +74,21 @@ class tT_model:
         
         #create 2D array for storing model output, with some error checking
         if comp_type == 'size':
-            #determine mean grain size, +/- 2s deviation 
+            #determine mean, maximum, and minimum grain size 
             #if obs_data is present, use mean from measured, otherwise use grain size in grain_in
             if obs_data is not None:
                 mean_size = np.mean(obs_data[:,3])
-                std_2s_plus = mean_size + 2*np.std(obs_data[:,3])
-                std_2s_minus = mean_size - 2*np.std(obs_data[:,3])
+                max_size = np.max(obs_data[:,3])
+                min_size = np.min(obs_data[:,3])
                 
 
             else:
                 mean_size = grains.iloc[:,3].mean()
-                std_2s_plus = mean_size + std_grain
-                std_2s_minus = mean_size - std_grain
+                max_size = mean_size + std_grain
+                min_size = mean_size - std_grain
 
             #now create the array
-            if std_2s_plus > mean_size:
+            if max_size > mean_size:
                 model_data = np.zeros((num_grains*3,num_paths*3))
             else:
                 model_data = np.zeros((num_grains,num_paths*3))
@@ -125,10 +125,10 @@ class tT_model:
                 eU_ppm = U_ppm + 0.238*Th_ppm + 0.0012*Sm_ppm
 
                 if grains.iloc[j,0] == 'apatite':
-                    if std_2s_plus > mean_size:
+                    if max_size > mean_size:
                         mean_grain = apatite(mean_size,log2_nodes,ap_tT,U_ppm,Th_ppm,Sm_ppm)
-                        std_plus_grain = apatite(std_2s_plus,log2_nodes,ap_tT,U_ppm,Th_ppm,Sm_ppm)
-                        std_minus_grain = apatite(std_2s_minus,log2_nodes,ap_tT,U_ppm,Th_ppm,Sm_ppm)
+                        std_plus_grain = apatite(max_size,log2_nodes,ap_tT,U_ppm,Th_ppm,Sm_ppm)
+                        std_minus_grain = apatite(min_size,log2_nodes,ap_tT,U_ppm,Th_ppm,Sm_ppm)
 
                         #calculate dates
                         mean_date = mean_grain.flowers_date(ap_anneal)
@@ -147,8 +147,8 @@ class tT_model:
 
                         #add grain size to array
                         model_data[j,i*3//2+2] = mean_size
-                        model_data[j+num_grains,i*3//2+2] = std_2s_plus
-                        model_data[j+2*num_grains,i*3//2+2] = std_2s_minus
+                        model_data[j+num_grains,i*3//2+2] = max_size
+                        model_data[j+2*num_grains,i*3//2+2] = min_size
 
                     else:
                         mean_grain = apatite(mean_size,log2_nodes,ap_tT,U_ppm,Th_ppm,Sm_ppm)
@@ -166,10 +166,10 @@ class tT_model:
                         model_data[j,i*3//2+2] = mean_size
 
                 elif grains.iloc[j,0] == 'zircon':
-                    if std_2s_plus > mean_size:
+                    if max_size > mean_size:
                         mean_grain = zircon(mean_size,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
-                        std_plus_grain = zircon(std_2s_plus,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
-                        std_minus_grain = zircon(std_2s_minus,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
+                        std_plus_grain = zircon(max_size,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
+                        std_minus_grain = zircon(min_size,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
 
                         #calculate dates
                         mean_date = mean_grain.guenthner_date(zirc_anneal)
@@ -188,8 +188,8 @@ class tT_model:
 
                         #add grain size to array
                         model_data[j,i*3//2+2] = mean_size
-                        model_data[j+num_grains,i*3//2+2] = std_2s_plus
-                        model_data[j+2*num_grains,i*3//2+2] = std_2s_minus
+                        model_data[j+num_grains,i*3//2+2] = max_size
+                        model_data[j+2*num_grains,i*3//2+2] = min_size
 
                     else:
                         mean_grain = zircon(mean_size,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
@@ -256,8 +256,7 @@ class tT_model:
 
         #set up color strings, if greater than 8 date-eU/tT sets, switch to viridis gradational color scheme
         if np.size(model_data,1)/3 < 8:
-            color_options = ['xkcd:black','xkcd:royal blue','xkcd:red','xkcd:sky',
-                             'xkcd:lime','xkcd:dark purple','xkcd:rose','xkcd:grey']
+            color_options = ['xkcd:black','xkcd:royal blue','xkcd:red','xkcd:sky','xkcd:lime','xkcd:dark purple','xkcd:rose','xkcd:grey']
         else:
             color_options = []
 
