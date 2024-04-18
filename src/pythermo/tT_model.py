@@ -40,7 +40,7 @@ class tT_model:
     def get_obs_data(self):
         return self.__obs_data
 
-    def forward(self, comp_type='size', model_num=1, std_grain=0, log2_nodes=9):
+    def forward(self, comp_type='size', model_num=1, std_grain=0, log2_nodes=8):
         """ 
         Runs a forward model for each individual tT path entry in class variable tT_in and the grain inputs in class variable grain_in.
 
@@ -56,7 +56,7 @@ class tT_model:
             The user-defined 2 sigma standard deviation in grain size for grain size comparison runs. Can be used if obs_data is 'None'. Default is 0.
         
         log2_nodes: optional int
-            The number of nodes (2**log2_nodes + 1) used in the Crank-Nicolson diffusion solver. Default is 9 (512 nodes + 1).
+            The number of nodes (2**log2_nodes + 1) used in the Crank-Nicolson diffusion solver. Default is 8 (256 nodes + 1).
 
         Returns
         -------

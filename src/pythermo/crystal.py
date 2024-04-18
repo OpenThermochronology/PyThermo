@@ -309,24 +309,16 @@ class crystal:
         ft_Sm = corr_factors['total_Sm'] * corr_factors['ft_Sm']
 
         #set up Newton-Raphson equation
-        f_date = (ft_U238*(np.exp(lambda_238_yr*date_guess)-1)+ft_U235*(np.exp(lambda_235_yr*date_guess)-1)
-                  +ft_Th*(np.exp(lambda_232_yr*date_guess)-1)+ft_Sm*(np.exp(lambda_147_yr*date_guess)-1)
-                    - total_He)
-        f_date_prime = (ft_U238*lambda_238_yr*np.exp(lambda_238_yr*date_guess)+ft_U235*lambda_235_yr
-                        *np.exp(lambda_235_yr*date_guess)+ft_Th*lambda_232_yr*np.exp(lambda_232_yr*date_guess)
-                        +ft_Sm*lambda_147_yr*np.exp(lambda_147_yr*date_guess))
+        f_date = (ft_U238*(np.exp(lambda_238_yr*date_guess)-1)+ft_U235*(np.exp(lambda_235_yr*date_guess)-1)+ft_Th*(np.exp(lambda_232_yr*date_guess)-1)+ft_Sm*(np.exp(lambda_147_yr*date_guess)-1)- total_He)
+        f_date_prime = (ft_U238*lambda_238_yr*np.exp(lambda_238_yr*date_guess)+ft_U235*lambda_235_yr*np.exp(lambda_235_yr*date_guess)+ft_Th*lambda_232_yr*np.exp(lambda_232_yr*date_guess)+ft_Sm*lambda_147_yr*np.exp(lambda_147_yr*date_guess))
         date_diff = date_guess
     
         while abs(date_diff) > tolerance:
             corrected_date = date_guess - f_date/f_date_prime
             date_diff = date_guess - corrected_date
             date_guess = corrected_date
-            f_date = (ft_U238*(np.exp(lambda_238_yr*date_guess)-1)+ft_U235*(np.exp(lambda_235_yr*date_guess)-1)
-                  +ft_Th*(np.exp(lambda_232_yr*date_guess)-1)+ft_Sm*(np.exp(lambda_147_yr*date_guess)-1)
-                    - total_He)
-            f_date_prime = (ft_U238*lambda_238_yr*np.exp(lambda_238_yr*date_guess)+ft_U235*lambda_235_yr
-                        *np.exp(lambda_235_yr*date_guess)+ft_Th*lambda_232_yr*np.exp(lambda_232_yr*date_guess)
-                        +ft_Sm*lambda_147_yr*np.exp(lambda_147_yr*date_guess))
+            f_date = (ft_U238*(np.exp(lambda_238_yr*date_guess)-1)+ft_U235*(np.exp(lambda_235_yr*date_guess)-1)+ft_Th*(np.exp(lambda_232_yr*date_guess)-1)+ft_Sm*(np.exp(lambda_147_yr*date_guess)-1) - total_He)
+            f_date_prime = (ft_U238*lambda_238_yr*np.exp(lambda_238_yr*date_guess)+ft_U235*lambda_235_yr*np.exp(lambda_235_yr*date_guess)+ft_Th*lambda_232_yr*np.exp(lambda_232_yr*date_guess)+ft_Sm*lambda_147_yr*np.exp(lambda_147_yr*date_guess))
 
         #convert to Ma
         corrected_date=corrected_date/1000000
@@ -610,10 +602,7 @@ class zircon(crystal):
         relevant_tT = self.__relevant_tT
 
         #calculate dose in alpha/g at each time step
-        alpha_i = [8*U238_atom*(np.exp(lambda_238*relevant_tT[i,0])-np.exp(lambda_238*relevant_tT[i+1,0]))
-                       + 7*U235_atom*(np.exp(lambda_235*relevant_tT[i,0])-np.exp(lambda_235*relevant_tT[i+1,0]))
-                        + 6*Th_atom*(np.exp(lambda_232*relevant_tT[i,0])-np.exp(lambda_232*relevant_tT[i+1,0])) 
-                          for i in range(np.size(relevant_tT,0)-2,-1,-1)]
+        alpha_i = [8*U238_atom*(np.exp(lambda_238*relevant_tT[i,0])-np.exp(lambda_238*relevant_tT[i+1,0])) + 7*U235_atom*(np.exp(lambda_235*relevant_tT[i,0])-np.exp(lambda_235*relevant_tT[i+1,0])) + 6*Th_atom*(np.exp(lambda_232*relevant_tT[i,0])-np.exp(lambda_232*relevant_tT[i+1,0])) for i in range(np.size(relevant_tT,0)-2,-1,-1)]
 
         #multiple each row of the rho_r_array by alpha_i
         alpha_e_array = rho_r_array[:np.size(relevant_tT,0)-1,:np.size(relevant_tT,0)-1] * alpha_i
@@ -664,12 +653,8 @@ class zircon(crystal):
         #mean unidirectional length of travel until damage zone in a zircon with 1e14 alphas/g, in nm
         lint_0=45920.0
 
-        #calculate diffusivities at each time step, modified equation 8 in Guenthner et al. (2013, units are in micrometers2/s
-        diff_list = [radius**2 * (((radius**2*np.exp(-Ba*damage[i]*interconnect)**3*(lint_0/(4.2/((1-np.exp(-Ba*damage[i]))*SV)-2.5))**2) 
-                       /(D0_l * np.exp(-Ea_l/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2)))))+ 
-                      ((radius**2*(1-np.exp(-Ba*damage[i]*interconnect)))**3 
-                       /(D0_N17*np.exp(-Ea_N17/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))))**-1
-                      for i in range(len(damage))]
+        #calculate diffusivities at each time step, modified equation 8 in Guenthner et al. (2013, units are in micrometers2/s; minimal diffusivity allowed equivalent to zircons with 1e14 alphas/g), prevents divide by zero in diffusivity calculation
+        diff_list = [radius**2 * (((radius**2*np.exp(-Ba*damage[i]*interconnect)**3*(lint_0/(4.2/((1-np.exp(-Ba*damage[i]))*SV)-2.5))**2) /(D0_l * np.exp(-Ea_l/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))) + ((radius**2*(1-np.exp(-Ba*damage[i]*interconnect)))**3 /(D0_N17*np.exp(-Ea_N17/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))))**-1 if damage[i] >= 10**14 else radius**2 * (((radius**2)/(D0_l * np.exp(-Ea_l/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))))**-1  for i in range(len(damage))]
 
         #create production lists that consider alpha ejection
         aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.alpha_ejection(self.__radius,self.__nodes,self.__r_step,self.__U_ppm,self.__Th_ppm,self.__Sm_ppm,'zircon')
