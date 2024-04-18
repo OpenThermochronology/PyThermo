@@ -518,7 +518,7 @@ class crystal:
         return y
 
 class zircon(crystal):
-    def __init__(self, radius, log2_nodes, relevant_tT, U_ppm, Th_ppm, Sm_ppm=0):
+    def __init__(self, radius, log2_nodes, relevant_tT, rho_r_array, U_ppm, Th_ppm, Sm_ppm=0):
         """
         Constructor for zircon class, a sub class of the crystal super class.
 
@@ -533,6 +533,9 @@ class zircon(crystal):
         
         relevant_tT: 2D array of floats
             Discretized time-temperature path
+
+        rho_r_array: 2D array of floats
+            Matrix of dimensionless track density for the time-temperature path relevant_tT. Assumes that the # of rows in rho_r_array and relevant_tT are equivalent
         
         U_ppm: float
             Concentration of uranium in zircon (in ppm)
@@ -554,6 +557,7 @@ class zircon(crystal):
         self.__Th_ppm = Th_ppm
         self.__Sm_ppm = Sm_ppm
         self.__relevant_tT = relevant_tT
+        self.__rho_r_array = rho_r_array
 
     def get_radius(self):
         return self.__radius
@@ -578,17 +582,14 @@ class zircon(crystal):
     
     def get_relevant_tT(self):
         return self.__relevant_tT
+    
+    def get_rho_r_array(self):
+        return self.__rho_r_array
         
-    def guenthner_damage(self,rho_r_array):
+    def guenthner_damage(self):
         """
         Calculates the amount of radiation damage at each time step of class variable relevant_tT using the parameterization of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01). The damage amounts can then be directly used to calculate diffusivities at each time step.
         
-        Parameters
-        ----------
-
-        rho_r_array: 2D array of floats
-            Matrix of dimensionless track density for the time-temperature path relevant_tT. Assumes that the # of rows in rho_r_array and relevant_tT are equivalent
-
         Returns
         -------
         
@@ -600,6 +601,7 @@ class zircon(crystal):
         U235_atom = self.__U_ppm * U235_ppm_atom
         Th_atom = self.__Th_ppm * Th_ppm_atom
         relevant_tT = self.__relevant_tT
+        rho_r_array = self.__rho_r_array
 
         #calculate dose in alpha/g at each time step
         alpha_i = [8*U238_atom*(np.exp(lambda_238*relevant_tT[i,0])-np.exp(lambda_238*relevant_tT[i+1,0])) + 7*U235_atom*(np.exp(lambda_235*relevant_tT[i,0])-np.exp(lambda_235*relevant_tT[i+1,0])) + 6*Th_atom*(np.exp(lambda_232*relevant_tT[i,0])-np.exp(lambda_232*relevant_tT[i+1,0])) for i in range(np.size(relevant_tT,0)-2,-1,-1)]
@@ -612,16 +614,10 @@ class zircon(crystal):
 
         return damage
 
-    def guenthner_date(self,rho_r_array):
+    def guenthner_date(self):
         """
         Zircon (U-Th)/He date calculator. First, calculates the diffusivity at each time step of class variable relevant_tT using the parameterization of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally, the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
         
-        Parameters
-        ----------
-
-        rho_r_array: 2D array of floats
-            Matrix of dimensionless track density for the time-temperature path relevant_tT. Assumes that the # of rows in rho_r_array and relevant_tT are equivalent
-
         Returns
         -------
         
@@ -635,7 +631,7 @@ class zircon(crystal):
         relevant_tT = self.__relevant_tT
 
         #calculate damage levels using guenthner_damage function
-        damage = self.guenthner_damage(rho_r_array)
+        damage = self.guenthner_damage()
         
         #Guenthner et al. (2013) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
         Ea_l = 165.0
@@ -695,7 +691,7 @@ class zircon(crystal):
         return date
 
 class apatite(crystal):
-    def __init__(self, radius, log2_nodes, relevant_tT, U_ppm, Th_ppm, Sm_ppm=0):
+    def __init__(self, radius, log2_nodes, relevant_tT, rho_r_array, U_ppm, Th_ppm, Sm_ppm=0):
         """
         Constructor for apatite class, a sub class of the crystal super class.
 
@@ -710,6 +706,9 @@ class apatite(crystal):
         
         relevant_tT: 2D array of floats
             Discretized time-temperature path
+
+        rho_r_array: 2D array of floats
+            Matrix of dimensionless track density for the time-temperature path relevant_tT. Assumes that the # of rows in rho_r_array and relevant_tT are equivalent
         
         U_ppm: float
             Concentration of uranium in apatite (in ppm)
@@ -731,6 +730,7 @@ class apatite(crystal):
         self.__Th_ppm = Th_ppm
         self.__Sm_ppm = Sm_ppm
         self.__relevant_tT = relevant_tT
+        self.__rho_r_array = rho_r_array
 
     def get_radius(self):
         return self.__radius
@@ -755,16 +755,13 @@ class apatite(crystal):
     
     def get_relevant_tT(self):
         return self.__relevant_tT
+    
+    def get_rho_r_array(self):
+        return self.__rho_r_array
         
-    def flowers_damage(self,rho_r_array):
+    def flowers_damage(self):
         """
         Calculates the amount of radiation damage at each time step of class variable relevant_tT using the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015). The damage amounts can then be directly used to calculate diffusivities at each time step.
-        
-        Parameters
-        ----------
-
-        rho_r_array: 2D array of floats
-            Matrix of dimensionless track density for the time-temperature path relevant_tT. Assumes that the # of rows in rho_r_array and relevant_tT are equivalent
 
         Returns
         -------
@@ -784,6 +781,7 @@ class apatite(crystal):
         Sm_vol = self.__Sm_ppm * Sm_ppm_atom * ap_density
         
         relevant_tT = self.__relevant_tT
+        rho_r_array = self.__rho_r_array
 
         #rho v calculation, atoms/cc
         rho_v = [U238_vol*(np.exp(lambda_238*relevant_tT[i,0])-np.exp(lambda_238*relevant_tT[i+1,0])) + (7/8)*U235_vol*(np.exp(lambda_235*relevant_tT[i,0])-np.exp(lambda_235*relevant_tT[i+1,0])) + (6/8)*Th_vol*(np.exp(lambda_232*relevant_tT[i,0])-np.exp(lambda_232*relevant_tT[i+1,0])) + (1/8)*Sm_vol*(np.exp(lambda_147*relevant_tT[i,0])-np.exp(lambda_147*relevant_tT[i+1,0])) for i in range(np.size(relevant_tT,0)-2,-1,-1)]
@@ -796,15 +794,9 @@ class apatite(crystal):
         
         return damage
     
-    def flowers_date(self,rho_r_array):
+    def flowers_date(self):
         """
         Apatite (U-Th)/He date calculator. First, calculates the diffusivity at each time step of class variable relevant_tT using the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally,the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
-        
-        Parameters
-        ----------
-
-        rho_r_array: 2D array of floats
-            Matrix of dimensionless track density for the time-temperature path relevant_tT. Assumes that the # of rows in rho_r_array and relevant_tT are equivalent
 
         Returns
         -------
@@ -814,7 +806,7 @@ class apatite(crystal):
         
         """
         #calculate damage levels using flowers_damage function
-        damage = self.flowers_damage(rho_r_array)
+        damage = self.flowers_damage()
 
         #Flowers et al. 2009 damage-diffusivity equation parameters
         omega = 10**-22

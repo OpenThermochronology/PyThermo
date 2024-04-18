@@ -126,14 +126,14 @@ class tT_model:
 
                 if grains.iloc[j,0] == 'apatite':
                     if max_size > mean_size:
-                        mean_grain = apatite(mean_size,log2_nodes,ap_tT,U_ppm,Th_ppm,Sm_ppm)
-                        std_plus_grain = apatite(max_size,log2_nodes,ap_tT,U_ppm,Th_ppm,Sm_ppm)
-                        std_minus_grain = apatite(min_size,log2_nodes,ap_tT,U_ppm,Th_ppm,Sm_ppm)
+                        mean_grain = apatite(mean_size,log2_nodes,ap_tT,ap_anneal,U_ppm,Th_ppm,Sm_ppm)
+                        std_plus_grain = apatite(max_size,log2_nodes,ap_tT,ap_anneal,U_ppm,Th_ppm,Sm_ppm)
+                        std_minus_grain = apatite(min_size,log2_nodes,ap_tT,ap_anneal,U_ppm,Th_ppm,Sm_ppm)
 
                         #calculate dates
-                        mean_date = mean_grain.flowers_date(ap_anneal)
-                        std_plus_date = std_plus_grain.flowers_date(ap_anneal)
-                        std_minus_date = std_minus_grain.flowers_date(ap_anneal)
+                        mean_date = mean_grain.flowers_date()
+                        std_plus_date = std_plus_grain.flowers_date()
+                        std_minus_date = std_minus_grain.flowers_date()
 
                         #add dates to array
                         model_data[j,i*3//2] = mean_date
@@ -151,10 +151,10 @@ class tT_model:
                         model_data[j+2*num_grains,i*3//2+2] = min_size
 
                     else:
-                        mean_grain = apatite(mean_size,log2_nodes,ap_tT,U_ppm,Th_ppm,Sm_ppm)
+                        mean_grain = apatite(mean_size,log2_nodes,ap_tT,ap_anneal,U_ppm,Th_ppm,Sm_ppm)
 
                         #calculate date
-                        mean_date = mean_grain.flowers_date(ap_anneal)
+                        mean_date = mean_grain.flowers_date()
 
                         #add date to array
                         model_data[j,i*3//2] = mean_date
@@ -167,14 +167,14 @@ class tT_model:
 
                 elif grains.iloc[j,0] == 'zircon':
                     if max_size > mean_size:
-                        mean_grain = zircon(mean_size,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
+                        mean_grain = zircon(mean_size,log2_nodes,zirc_tT,zirc_anneal,U_ppm,Th_ppm,Sm_ppm)
                         std_plus_grain = zircon(max_size,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
                         std_minus_grain = zircon(min_size,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
 
                         #calculate dates
-                        mean_date = mean_grain.guenthner_date(zirc_anneal)
-                        std_plus_date = std_plus_grain.guenthner_date(zirc_anneal)
-                        std_minus_date = std_minus_grain.guenthner_date(zirc_anneal)
+                        mean_date = mean_grain.guenthner_date()
+                        std_plus_date = std_plus_grain.guenthner_date()
+                        std_minus_date = std_minus_grain.guenthner_date()
 
                         #add dates to array
                         model_data[j,i*3//2] = mean_date
@@ -192,10 +192,10 @@ class tT_model:
                         model_data[j+2*num_grains,i*3//2+2] = min_size
 
                     else:
-                        mean_grain = zircon(mean_size,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
+                        mean_grain = zircon(mean_size,log2_nodes,zirc_tT,zirc_anneal,U_ppm,Th_ppm,Sm_ppm)
 
                         #calculate date
-                        mean_date = mean_grain.guenthner_date(zirc_anneal)
+                        mean_date = mean_grain.guenthner_date()
 
                         #add date to array
                         model_data[j,i*3//2] = mean_date
