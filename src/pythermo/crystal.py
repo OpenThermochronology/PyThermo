@@ -616,6 +616,50 @@ class zircon(crystal):
         damage = np.sum(alpha_e_array,axis=1)
 
         return damage
+    
+    def guenthner_diffs(self,damage):
+        """
+        Calculates the diffusivity at each time step of class variable relevant_tT using the parameterization of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01).
+
+        Parameters
+        ----------
+        damage: 1D array of floats
+            Array of total amount of damage at each time step of relevant_tT
+
+        
+        Returns
+        -------
+        
+        diff_list: list of floats
+            List of the diffusivities as a function of damage at each time step of relevant_tT
+        
+        """
+        #radius to micrometers
+        radius = self.__radius
+        #time in seconds
+        relevant_tT = self.__relevant_tT
+
+        #Guenthner et al. (2013) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
+        Ea_l = 165.0
+        D0_l = 193188.0 * 10**8 
+        D0_N17 = 0.0034 * 10**8
+        Ea_N17 = 71.0 
+
+        #g amorphized per alpha event
+        Ba = 5.48E-19
+        interconnect = 3.0
+
+        #empirical constraints for damage chains from Ketcham et al. (2013) (https://doi.org/10.2138/am.2013.4249) 
+        #track surface to volume ratio in nm^-1 
+        SV=1.669 
+        #mean unidirectional length of travel until damage zone in a zircon with 1e14 alphas/g, in nm
+        lint_0=45920.0
+
+        #calculate diffusivities at each time step, modified equation 8 in Guenthner et al. (2013, units are in micrometers2/s; minimal diffusivity allowed equivalent to zircons with 1e14 alphas/g), prevents divide by zero in diffusivity calculation
+        diff_list = [radius**2 * (((radius**2*np.exp(-Ba*damage[i]*interconnect)**3*(lint_0/(4.2/((1-np.exp(-Ba*damage[i]))*SV)-2.5))**2) /(D0_l * np.exp(-Ea_l/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))) + ((radius**2*(1-np.exp(-Ba*damage[i]*interconnect)))**3 /(D0_N17*np.exp(-Ea_N17/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))))**-1 if damage[i] >= 10**14 else radius**2 * (((radius**2)/(D0_l * np.exp(-Ea_l/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))))**-1  for i in range(len(damage))]
+
+        return diff_list
+            
 
     def guenthner_date(self):
         """
@@ -636,24 +680,8 @@ class zircon(crystal):
         #calculate damage levels using guenthner_damage function
         damage = self.guenthner_damage()
         
-        #Guenthner et al. (2013) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
-        Ea_l = 165.0
-        D0_l = 193188.0 * 10**8 
-        D0_N17 = 0.0034 * 10**8
-        Ea_N17 = 71.0 
-
-        #g amorphized per alpha event
-        Ba = 5.48E-19
-        interconnect = 3.0
-
-        #empirical constraints for damage chains from Ketcham et al. (2013) (https://doi.org/10.2138/am.2013.4249) 
-        #track surface to volume ratio in nm^-1 
-        SV=1.669 
-        #mean unidirectional length of travel until damage zone in a zircon with 1e14 alphas/g, in nm
-        lint_0=45920.0
-
-        #calculate diffusivities at each time step, modified equation 8 in Guenthner et al. (2013, units are in micrometers2/s; minimal diffusivity allowed equivalent to zircons with 1e14 alphas/g), prevents divide by zero in diffusivity calculation
-        diff_list = [radius**2 * (((radius**2*np.exp(-Ba*damage[i]*interconnect)**3*(lint_0/(4.2/((1-np.exp(-Ba*damage[i]))*SV)-2.5))**2) /(D0_l * np.exp(-Ea_l/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))) + ((radius**2*(1-np.exp(-Ba*damage[i]*interconnect)))**3 /(D0_N17*np.exp(-Ea_N17/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))))**-1 if damage[i] >= 10**14 else radius**2 * (((radius**2)/(D0_l * np.exp(-Ea_l/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))))**-1  for i in range(len(damage))]
+        #get diff_list from guenthner_diffs method
+        diff_list = self.guenthner_diffs(damage)
 
         #create production lists that consider alpha ejection
         aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_alpha_ejection()
@@ -800,20 +828,23 @@ class apatite(crystal):
         
         return damage
     
-    def flowers_date(self):
+    def flowers_diffs(self,damage):
         """
-        Apatite (U-Th)/He date calculator. First, calculates the diffusivity at each time step of class variable relevant_tT using the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally,the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
+        Calculates the diffusivity at each time step of class variable relevant_tT using the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015).
 
+        Parameters
+        ----------
+        damage: 1D array of floats
+            Array of total amount of damage at each time step of relevant_tT
+
+        
         Returns
         -------
         
-        date: float
-            Apatite (U-Th)/He date, corrected for alpha ejection
+        diff_list: list of floats
+            List of the diffusivities as a function of damage at each time step of relevant_tT
         
         """
-        #calculate damage levels using flowers_damage function
-        damage = self.flowers_damage()
-
         #Flowers et al. 2009 damage-diffusivity equation parameters
         omega = 10**-22
         psi = 10**-13
@@ -828,6 +859,25 @@ class apatite(crystal):
 
         #calculate diffusivities at each time step, equation 8 in Flowers et al. (2009), units are in micrometers2/s
         diff_list = [(D0_L * np.exp(-E_L/(gas_constant*0.5*(relevant_tT[i,1]+relevant_tT[i+1,1]))))/ (((psi*damage[i] + omega*damage[i]**3) * np.exp(E_trap/(gas_constant*0.5*(relevant_tT[i,1]+relevant_tT[i+1,1])))) + 1) for i in range(len(damage))]
+
+        return diff_list
+    
+    def flowers_date(self):
+        """
+        Apatite (U-Th)/He date calculator. First, calculates the diffusivity at each time step of class variable relevant_tT using the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally,the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
+
+        Returns
+        -------
+        
+        date: float
+            Apatite (U-Th)/He date, corrected for alpha ejection
+        
+        """
+        #calculate damage levels using flowers_damage function
+        damage = self.flowers_damage()
+
+        #calculate diffusivities using flowers_diffs function
+        diff_list = self.flowers_diffs(damage)
 
         #create production lists that consider alpha ejection
         aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.apatite_alpha_ejection()
