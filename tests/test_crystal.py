@@ -26,11 +26,11 @@ def test_apatite_alpha_ejection(ap):
     ft_Th = corr_factors['total_Th'] * corr_factors['ft_Th']
     ft_Sm = corr_factors['total_Sm'] * corr_factors['ft_Sm']
 
-    assert len(aej_U238) == len(aej_U235) and len(aej_U238) == len(aej_Th) and len(aej_U238) == len(aej_Sm) and len(aej_U235) == len(aej_Th) and len(aej_U235) == len(aej_Sm) and len(aej_Th) == len(aej_Sm)
-    assert all(i>=0 and i<=1 for i in aej_U238)
-    assert all(i>=0 and i<=1 for i in aej_U235)
-    assert all(i>=0 and i<=1 for i in aej_Th)
-    assert all(i>=0 and i<=1 for i in aej_Sm)
+    assert len(aej_U238) == len(aej_U235) and len(aej_U238) == len(aej_Th) and len(aej_U238) == len(aej_Sm) and len(aej_U235) == len(aej_Th) and len(aej_U235) == len(aej_Sm) and len(aej_Th) == len(aej_Sm) and len(aej_U238) == 257
+    assert all(i>=0 for i in aej_U238)
+    assert all(i>=0 for i in aej_U235)
+    assert all(i>=0 for i in aej_Th)
+    assert all(i>=0 for i in aej_Sm)
 
     assert ft_U238 > 0 and ft_U238 < 1
     assert ft_U235 > 0 and ft_U235 < 1
@@ -45,11 +45,11 @@ def test_zircon_alpha_ejection(zirc):
     ft_Th = corr_factors['total_Th'] * corr_factors['ft_Th']
     ft_Sm = corr_factors['total_Sm'] * corr_factors['ft_Sm']
 
-    assert len(aej_U238) == len(aej_U235) and len(aej_U238) == len(aej_Th) and len(aej_U238) == len(aej_Sm) and len(aej_U235) == len(aej_Th) and len(aej_U235) == len(aej_Sm) and len(aej_Th) == len(aej_Sm)
-    assert all(i >= 0 and i<=1 for i in aej_U238)
-    assert all(i >= 0 and i<=1 for i in aej_U235)
-    assert all(i >= 0 and i<=1 for i in aej_Th)
-    assert all(i >= 0 and i<=1 for i in aej_Sm)
+    assert len(aej_U238) == len(aej_U235) and len(aej_U238) == len(aej_Th) and len(aej_U238) == len(aej_Sm) and len(aej_U235) == len(aej_Th) and len(aej_U235) == len(aej_Sm) and len(aej_Th) == len(aej_Sm) and len(aej_U238) == 257
+    assert all(i>=0 for i in aej_U238)
+    assert all(i>=0 for i in aej_U235)
+    assert all(i>=0 for i in aej_Th)
+    assert all(i>=0 for i in aej_Sm)
 
     assert ft_U238 > 0 and ft_U238 < 1
     assert ft_U235 > 0 and ft_U235 < 1
@@ -75,6 +75,8 @@ def test_ap_CN_diffusion(ap):
     D0_L = D0_L_a2 * 60**2
 
     diff_list = [(D0_L * np.exp(-E_L/(gas_constant*0.5*(ap_tT[i,1]+ap_tT[i+1,1]))))/ (((psi*damage[i] + omega*damage[i]**3) * np.exp(E_trap/(gas_constant*0.5*(ap_tT[i,1]+ap_tT[i+1,1])))) + 1) for i in range(len(damage))]
+
+    assert len(diff_list) == np.size(ap_tT,0) - 1
 
     aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = ap.apatite_alpha_ejection()
     r_step = 60/(257.5)
@@ -111,6 +113,8 @@ def test_zirc_CN_diffusion(zirc):
 
     #calculate diffusivities at each time step, modified equation 8 in Guenthner et al. (2013, units are in micrometers2/s; minimal diffusivity allowed equivalent to zircons with 1e14 alphas/g), prevents divide by zero in diffusivity calculation
     diff_list = [radius**2 * (((radius**2*np.exp(-Ba*damage[i]*interconnect)**3*(lint_0/(4.2/((1-np.exp(-Ba*damage[i]))*SV)-2.5))**2) /(D0_l * np.exp(-Ea_l/(gas_constant*((zirc_tT[i,1]+zirc_tT[i+1,1])/2))))) + ((radius**2*(1-np.exp(-Ba*damage[i]*interconnect)))**3 /(D0_N17*np.exp(-Ea_N17/(gas_constant*((zirc_tT[i,1]+zirc_tT[i+1,1])/2))))))**-1 if damage[i] >= 10**14 else radius**2 * (((radius**2)/(D0_l * np.exp(-Ea_l/(gas_constant*((zirc_tT[i,1]+zirc_tT[i+1,1])/2))))))**-1  for i in range(len(damage))]
+
+    assert len(diff_list) == np.size(zirc_tT,0) - 1
 
     aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = zirc.zircon_alpha_ejection()
     r_step = 60/(257.5)
@@ -171,6 +175,7 @@ def test_guenthner_date(zirc):
 
 def test_flowers_damage(ap):
     damage = ap.flowers_damage()
+    damage = np.array(damage)
     relevant_tT = ap.get_relevant_tT()
     assert np.size(damage)+1 == np.size(relevant_tT,0)
     assert np.isnan(damage).any() == False

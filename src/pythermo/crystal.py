@@ -179,7 +179,7 @@ class crystal:
             Time temperature history along which to calculate diffusion
         
         diffs: 1D array or list
-            Calculated diffusivities at each time temperature step in tT_path (units of micrometer2/s), must be length of np.size(tT_path,1) - 1
+            Calculated diffusivities at each time temperature step in tT_path (units of micrometer2/s), must be length of np.size(tT_path,0) - 1
 
         aej_U238: 1D array or list
             Alpha ejected 1D profile for 238U (in atoms/g), must be length of nodes
