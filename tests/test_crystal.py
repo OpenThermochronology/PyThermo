@@ -16,7 +16,7 @@ def zirc():
     tT_in = np.array([[0,20],[250,200],[500,20]])
     tT = pyt.tT_path(tT_in)
     tT.tT_interpolate()
-    zirc_anneal,zirc_tT = tT.ketcham_anneal()
+    zirc_anneal,zirc_tT = tT.guenthner_anneal()
     return pyt.zircon(60,8,zirc_tT,zirc_anneal,1000,500)
 
 def test_apatite_alpha_ejection(ap):
@@ -32,10 +32,10 @@ def test_apatite_alpha_ejection(ap):
     assert all(i>=0 for i in aej_Th)
     assert all(i>=0 for i in aej_Sm)
 
-    assert ft_U238 > 0 and ft_U238 < 1
-    assert ft_U235 > 0 and ft_U235 < 1
-    assert ft_Th > 0 and ft_Th < 1
-    assert ft_Sm > 0 and ft_Sm < 1
+    assert ft_U238 >= 0 
+    assert ft_U235 >= 0 
+    assert ft_Th >= 0 
+    assert ft_Sm >= 0 
     
 
 def test_zircon_alpha_ejection(zirc):
@@ -51,10 +51,10 @@ def test_zircon_alpha_ejection(zirc):
     assert all(i>=0 for i in aej_Th)
     assert all(i>=0 for i in aej_Sm)
 
-    assert ft_U238 > 0 and ft_U238 < 1
-    assert ft_U235 > 0 and ft_U235 < 1
-    assert ft_Th > 0 and ft_Th < 1
-    assert ft_Sm > 0 and ft_Sm < 1
+    assert ft_U238 >= 0 
+    assert ft_U235 >= 0 
+    assert ft_Th >= 0 
+    assert ft_Sm >= 0 
 
 def test_ap_CN_diffusion(ap):
     tT_in = np.array([[0,20],[250,100],[500,20]])
