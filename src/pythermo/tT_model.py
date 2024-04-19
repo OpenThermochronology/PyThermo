@@ -244,7 +244,7 @@ class tT_model:
         dateeU_fig, (time_temp, date_eU) = plt.subplots(2, 1, figsize=[5,6], dpi=600)
 
         time_temp.set_xlabel('Time (Ma)')
-        time_temp.set_ylabel('Temperature $\degree$C')
+        time_temp.set_ylabel('Temperature $^\circ$ C')
         date_eU.set_xlabel('eU concentration (ppm)')
         date_eU.set_ylabel('(U-Th)/He Date (Ma)')
 
