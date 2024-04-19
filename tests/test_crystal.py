@@ -56,21 +56,23 @@ def test_zircon_alpha_ejection(zirc):
     assert ft_Th >= 0 
     assert ft_Sm >= 0 
 
-def test_ap_CN_diffusion(ap):
+def test_ap_CN_diffusion():
     tT_in = np.array([[0,20],[250,100],[500,20]])
     tT = pyt.tT_path(tT_in)
     tT.tT_interpolate()
     ap_anneal,ap_tT = tT.ketcham_anneal()
+    ap = pyt.apatite(60,8,ap_tT,ap_anneal,100,50,Sm_ppm=10)
+
     damage = ap.flowers_damage()
-    gas_constant = 0.008314462618
+    assert len(damage)+1 == np.size(ap_tT,0)
     
+    gas_constant = 0.008314462618
     #Flowers et al. 2009 damage-diffusivity equation parameters
     omega = 10**-22
     psi = 10**-13
     E_trap = 34.0 #kJ/mol
     E_L = 122.3 #kJ/mol
     D0_L_a2 = np.exp(9.733) #1/s
-
     #convert D0_L_a2 to micrometers2/s using crystal radius
     D0_L = D0_L_a2 * 60**2
 
@@ -86,17 +88,18 @@ def test_ap_CN_diffusion(ap):
     assert np.isnan(He_profile).any() == False
     assert np.any(He_profile < 0) == False
 
-def test_zirc_CN_diffusion(zirc):
-    tT_in = np.array([[0,20],[250,100],[500,20]])
+def test_zirc_CN_diffusion():
+    tT_in = np.array([[0,20],[250,200],[500,20]])
     tT = pyt.tT_path(tT_in)
     tT.tT_interpolate()
     zirc_anneal, zirc_tT = tT.guenthner_anneal()
+    zirc = pyt.zircon(60,8,zirc_tT,zirc_anneal,1000,500)
+
     damage = zirc.guenthner_damage()
+    assert len(damage)+1 == np.size(zirc_tT,0)
+    
     gas_constant = 0.008314462618
     radius = 60
-
-    assert len(damage)+1 == np.size(zirc_tT,0)
-
     #Guenthner et al. (2013) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
     Ea_l = 165.0
     D0_l = 193188.0 * 10**8 
