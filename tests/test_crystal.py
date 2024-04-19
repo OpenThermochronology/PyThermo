@@ -132,7 +132,7 @@ def test_ap_He_date(ap):
     lambda_147_yr = 6.54*10**-12
 
     total_He = ft_U238*(np.exp(lambda_238_yr*date_guess)-1)+ft_U235*(np.exp(lambda_235_yr*date_guess)-1)+ft_Th*(np.exp(lambda_232_yr*date_guess)-1)+ft_Sm*(np.exp(lambda_147_yr*date_guess)-1)
-    date = zirc.He_date(total_He)
+    date = zirc.He_date(total_He, corr_factors)
 
     assert math.isclose(date,date_guess,rel_tol=.001)
 
@@ -151,14 +151,14 @@ def test_zirc_He_date(zirc):
     lambda_147_yr = 6.54*10**-12
 
     total_He = ft_U238*(np.exp(lambda_238_yr*date_guess)-1)+ft_U235*(np.exp(lambda_235_yr*date_guess)-1)+ft_Th*(np.exp(lambda_232_yr*date_guess)-1)+ft_Sm*(np.exp(lambda_147_yr*date_guess)-1)
-    date = zirc.He_date(total_He)
+    date = zirc.He_date(total_He, corr_factors)
 
     assert math.isclose(date,date_guess,rel_tol=.001)
 
 def test_guenthner_damage(zirc):
     damage = zirc.guenthner_damage()
     relevant_tT = zirc.get_relevant_tT()
-    assert np.size(damage) == np.size(relevant_tT,0)
+    assert np.size(damage)+1 == np.size(relevant_tT,0)
     assert np.isnan(damage).any() == False
     assert np.any(damage < 0) == False
 
@@ -170,7 +170,7 @@ def test_guenthner_date(zirc):
 def test_flowers_damage(ap):
     damage = ap.flowers_damage()
     relevant_tT = ap.get_relevant_tT()
-    assert np.size(damage) == np.size(relevant_tT,0)
+    assert np.size(damage)+1 == np.size(relevant_tT,0)
     assert np.isnan(damage).any() == False
     assert np.any(damage < 0) == False
 

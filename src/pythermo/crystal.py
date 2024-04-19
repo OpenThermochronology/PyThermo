@@ -587,7 +587,7 @@ class zircon(crystal):
         return self.__rho_r_array
     
     def zircon_alpha_ejection(self):
-        self.alpha_ejection(self.__radius,self.__nodes,self.__r_step,self.__U_ppm,self.__Th_ppm,self.__Sm_ppm,'zircon')
+        return self.alpha_ejection(self.__radius,self.__nodes,self.__r_step,self.__U_ppm,self.__Th_ppm,self.__Sm_ppm,'zircon')
         
     def guenthner_damage(self):
         """
@@ -763,7 +763,7 @@ class apatite(crystal):
         return self.__rho_r_array
     
     def apatite_alpha_ejection(self):
-        self.alpha_ejection(self.__radius,self.__nodes,self.__r_step,self.__U_ppm,self.__Th_ppm,self.__Sm_ppm,'apatite')
+        return self.alpha_ejection(self.__radius,self.__nodes,self.__r_step,self.__U_ppm,self.__Th_ppm,self.__Sm_ppm,'apatite')
         
     def flowers_damage(self):
         """
