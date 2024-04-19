@@ -1,5 +1,7 @@
 # PyThermo
 
+[![CI][ci-img]][ci-url]
+
 A set of classes and methods for performing various modeling and computational tasks in the field of low-temperature thermochronology. The current focus is on forward modeling of apatite and zircon (U-Th)/He data using various diffusion and damage annealing kinetic models. Future releases will expand upon the available kinetic models and mineral systems, and introduce additional methods, such as forward modeling of Arrhenius relationships.
 
 The primary objective of this software is to provide an open-source, python-based toolkit for user adaptability and experimentation. The software includes routines for forward modeling and data plotting at higher levels that can be run in a simple fashion, but lower level algorithms are accessible as well. To that end, a secondary objective of this software is as a learning tool to remove some of the black box nature of thermal history modeling routines. Several methods are included (for example, a tridiagonal matrix solver) for instructional purposes, although the main program calls nominally faster scipy routines.
@@ -19,3 +21,6 @@ Once you've downloaded the python files, and if you're just interested in runnin
 ## Citation
 
 You can cite this package using (DOI pending).
+
+[ci-img]: https://github.com/OpenThermochronology/PyThermo/actions/workflows/CI.yml/badge.svg?branch=main
+[ci-url]: https://github.com/OpenThermochronology/PyThermo/actions/workflows/CI.yml
