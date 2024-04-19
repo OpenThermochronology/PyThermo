@@ -11,7 +11,7 @@ from .crystal import apatite, zircon
 from .tT_path import tT_path
 
 class tT_model:
-    def __init__(self, grain_in, tT_in, obs_data=None):
+    def __init__(self, grain_in, tT_in, obs_data=None, temp_precision=5):
         """ 
         Constructor for tT_model class. Supports mineral types: 'apatite' and 'zircon'. Supports damage-diffusivity models: 'guenthner', kinetics for zircon system of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01), and 'flowers', kinetics for apatite system of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015). Supports damage annealing models: 'guenthner_anneal', zircon fission track annealing parameters of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01),'ketcham_anneal', apatite fission track annealing parameters of Ketcham et al., (2007) (https://doi.org/10.2138/am.2007.2281). Units: Date, date error, and time = Ma, temperature = degrees C, grain radii = micrometers, concentrations = ppm.
 
@@ -26,10 +26,14 @@ class tT_model:
         obs_data: optional 2D array
             Measured data for forward model comparison: measured grain dates (1st column), 2 sigma error (2nd column), eU concentrations (3rd column), and grain size (4th column). Default is 'None'.
         
+        temp_precision: optional float
+            Default minimal spacing of temperature steps in the interpolated tT path. Smaller numbers yield better precision in the diffusion solver (and date) at the cost of increased run-time. Default is 5.
+        
         """
         self.__grain_in = grain_in
         self.__tT_in = tT_in
         self.__obs_data = obs_data
+        self.__temp_precision = temp_precision
         self.__model_data = None
     
     def get_grain_in(self):
@@ -40,6 +44,9 @@ class tT_model:
     
     def get_obs_data(self):
         return self.__obs_data
+    
+    def get_temp_precision(self):
+        return self.__temp_precision
     
     def get_model_data(self):
         return self.__model_data
@@ -118,7 +125,7 @@ class tT_model:
             
             #interpolate tT path
             tT_slice = tT_in[:last_time+1,i:i+2]
-            tT = tT_path(tT_slice)
+            tT = tT_path(tT_slice,self.__temp_precision)
             tT.tT_interpolate()
 
             #get rho_r annealing and relevant tT vectors, same for all grains for a given tT path

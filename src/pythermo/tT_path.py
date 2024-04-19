@@ -18,10 +18,10 @@ class tT_path:
             Instance variable, tT points to be interpolated. 1st row is time (in m.y.), 2nd row is temp (in oC)
 
         temp_precision: optional float
-            Instance variable, default minimal spacing of temperature steps, smaller numbers yield better precision (at the cost of increased run-time). Default is 5.
+            Default minimal spacing of temperature steps. Smaller numbers yield better precision in the diffusion solver (and date) at the cost of increased run-time. Default is 5.
 
         rate_acceleration: optional float
-            Instance variable, default maximum temperature acceleration allowed between time points, smaller numbers yield better precision (at the cost of increased run-time). Default is 1.5.
+            Default maximum temperature acceleration allowed between time points. Smaller numbers yield better precision in the diffusion solver (and date) at the cost of increased run-time Default is 1.5.
 
         """
         self.__tTin = tTin
