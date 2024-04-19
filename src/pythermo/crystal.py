@@ -585,6 +585,9 @@ class zircon(crystal):
     
     def get_rho_r_array(self):
         return self.__rho_r_array
+    
+    def zircon_alpha_ejection(self):
+        self.alpha_ejection(self.__radius,self.__nodes,self.__r_step,self.__U_ppm,self.__Th_ppm,self.__Sm_ppm,'zircon')
         
     def guenthner_damage(self):
         """
@@ -653,7 +656,7 @@ class zircon(crystal):
         diff_list = [radius**2 * (((radius**2*np.exp(-Ba*damage[i]*interconnect)**3*(lint_0/(4.2/((1-np.exp(-Ba*damage[i]))*SV)-2.5))**2) /(D0_l * np.exp(-Ea_l/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))) + ((radius**2*(1-np.exp(-Ba*damage[i]*interconnect)))**3 /(D0_N17*np.exp(-Ea_N17/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))))**-1 if damage[i] >= 10**14 else radius**2 * (((radius**2)/(D0_l * np.exp(-Ea_l/(gas_constant*((relevant_tT[i,1]+relevant_tT[i+1,1])/2))))))**-1  for i in range(len(damage))]
 
         #create production lists that consider alpha ejection
-        aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.alpha_ejection(self.__radius,self.__nodes,self.__r_step,self.__U_ppm,self.__Th_ppm,self.__Sm_ppm,'zircon')
+        aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_alpha_ejection()
 
         #send it all to the CN_diffusion method
         He_profile = self.CN_diffusion(self.__nodes,self.__r_step,self.__relevant_tT,diff_list,aej_U238,aej_U235,aej_Th,aej_Sm)
@@ -758,6 +761,9 @@ class apatite(crystal):
     
     def get_rho_r_array(self):
         return self.__rho_r_array
+    
+    def apatite_alpha_ejection(self):
+        self.alpha_ejection(self.__radius,self.__nodes,self.__r_step,self.__U_ppm,self.__Th_ppm,self.__Sm_ppm,'apatite')
         
     def flowers_damage(self):
         """
@@ -824,7 +830,7 @@ class apatite(crystal):
         diff_list = [(D0_L * np.exp(-E_L/(gas_constant*0.5*(relevant_tT[i,1]+relevant_tT[i+1,1]))))/ (((psi*damage[i] + omega*damage[i]**3) * np.exp(E_trap/(gas_constant*0.5*(relevant_tT[i,1]+relevant_tT[i+1,1])))) + 1) for i in range(len(damage))]
 
         #create production lists that consider alpha ejection
-        aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.alpha_ejection(self.__radius,self.__nodes,self.__r_step,self.__U_ppm,self.__Th_ppm,self.__Sm_ppm,'apatite')
+        aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.apatite_alpha_ejection()
 
         #send it all to the CN_diffusion method
         He_profile = self.CN_diffusion(self.__nodes,self.__r_step,self.__relevant_tT,diff_list,aej_U238,aej_U235,aej_Th,aej_Sm)
