@@ -50,7 +50,7 @@ def test_ap_forward():
     assert np.any(model_data < 0) == False
     assert np.any(model_data[:,1] < 0) == False
     assert np.any(model_data[:,2] < 0) == False
-    assert model_data[0,2] == np.mean(obs_data[:,4]) and model_data[3,2] == np.mean(obs_data[:,4])+10 and model_data[6,2] == np.mean(obs_data[:,4])-10
+    assert model_data[0,2] == np.mean(obs_data[:,3]) and model_data[3,2] == np.mean(obs_data[:,3])+10 and model_data[6,2] == np.mean(obs_data[:,3])-10
 
 def test_zirc_forward():
     tT_in = np.array([[0,20],[250,150],[500,20]])
@@ -100,7 +100,4 @@ def test_zirc_forward():
     assert np.any(model_data < 0) == False
     assert np.any(model_data[:,1] < 0) == False
     assert np.any(model_data[:,2] < 0) == False
-    assert model_data[0,2] == np.mean(obs_data[:,4]) and model_data[3,2] == np.mean(obs_data[:,4])+10 and model_data[6,2] == np.mean(obs_data[:,4])-10
-
-def test_date_eU_plot():
-    pass
+    assert model_data[0,2] == np.mean(obs_data[:,3]) and model_data[3,2] == np.mean(obs_data[:,3])+10 and model_data[6,2] == np.mean(obs_data[:,3])-10
