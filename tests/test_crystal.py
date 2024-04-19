@@ -95,6 +95,8 @@ def test_zirc_CN_diffusion(zirc):
     gas_constant = 0.008314462618
     radius = 60
 
+    assert len(damage)+1 == np.size(zirc_tT,0)
+
     #Guenthner et al. (2013) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
     Ea_l = 165.0
     D0_l = 193188.0 * 10**8 
