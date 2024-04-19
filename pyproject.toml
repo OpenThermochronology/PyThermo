@@ -20,4 +20,4 @@ classifiers = [
 
 
 [project.urls]
-Homepage = "https://github.com/OpenThermochronology/PyThermo.py"
+Homepage = "https://github.com/OpenThermochronology/PyThermo"

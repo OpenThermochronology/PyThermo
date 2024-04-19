@@ -32,7 +32,7 @@ class tT_path:
         #in millions of years
         self.__acceleration = rate_acceleration
 
-    def get_tT(self):
+    def get_tTin(self):
         return self.__tTin
     
     def get_precision(self):
@@ -111,8 +111,8 @@ class tT_path:
         Returns
         -------
 
-        reduced_len: 1D array of floats
-            Array of lengths of reduced tracks that can be converted to track densities
+        rho_r_array: 2D array of floats
+            Reduced track densities for each time slice of an instance of the class' tT path.
 
         interp_tT: 2D array of floats
             Interpolated and condensed time-temperature path
@@ -137,7 +137,6 @@ class tT_path:
         #interpolate tT path
         interp_tT = self.tT_interpolate()
         tT_len = np.size(interp_tT,0)
-
 
         #find the oldest track that still exists at the present day, store its annealing history in a list
         t_eq = 0.0
@@ -277,8 +276,8 @@ class tT_path:
         Returns
         -------
 
-        damage: 1D array of floats
-            Track densities for each time slice of an instance of the class' tT path.
+        rho_r_array: 2D array of floats
+            Reduced track densities for each time slice of an instance of the class' tT path.
 
         relevant_tT: 2D array of floats
             Condensed t-T path, time only goes as far back as is 'relevant' to damage annealing
@@ -299,7 +298,7 @@ class tT_path:
 
         return rho_r_array,relevant_tT
         
-    def ketcham_anneal(self, rmr0=None):
+    def ketcham_anneal(self, rmr0=0.83):
         """
         Contains the apatite fission track annealing kinetic parameters reported in Ketcham et al., (2007) (https://doi.org/10.2138/am.2007.2281), which are used in the Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015) derivation of the apatite radiation damage and annealing model. Values are passed to anneal method, which returns reduced track length 2D array that is converted to track density.
 
@@ -312,8 +311,8 @@ class tT_path:
         Returns
         -------
 
-        damage: 1D array
-            Track densities for each time slice of an instance of the class' tT path.
+        rho_r_array: 2D array of floats
+            Reduced track densities for each time slice of an instance of the class' tT path.
         
         relevant_tT: 2D array of floats
             Condensed t-T path, time only goes as far back as is 'relevant' to damage annealing
@@ -324,9 +323,6 @@ class tT_path:
         C2 = -65.12969
         C3 = -7.91715
         alpha = 0.04672
-        
-        if rmr0 is None:
-            rmr0 = 0.83
 
         kappa = 1.04-rmr0
         B2_total_anneal = 0.55
