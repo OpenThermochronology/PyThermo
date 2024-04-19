@@ -27,10 +27,10 @@ def test_apatite_alpha_ejection(ap):
     ft_Sm = corr_factors['total_Sm'] * corr_factors['ft_Sm']
 
     assert len(aej_U238) == len(aej_U235) and len(aej_U238) == len(aej_Th) and len(aej_U238) == len(aej_Sm) and len(aej_U235) == len(aej_Th) and len(aej_U235) == len(aej_Sm) and len(aej_Th) == len(aej_Sm)
-    assert all(i >= 0 and i<=1 for i in aej_U238)
-    assert all(i >= 0 and i<=1 for i in aej_U235)
-    assert all(i >= 0 and i<=1 for i in aej_Th)
-    assert all(i >= 0 and i<=1 for i in aej_Sm)
+    assert all(i>=0 and i<=1 for i in aej_U238)
+    assert all(i>=0 and i<=1 for i in aej_U235)
+    assert all(i>=0 and i<=1 for i in aej_Th)
+    assert all(i>=0 and i<=1 for i in aej_Sm)
 
     assert ft_U238 > 0 and ft_U238 < 1
     assert ft_U235 > 0 and ft_U235 < 1
@@ -79,6 +79,7 @@ def test_ap_CN_diffusion(ap):
     aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = ap.apatite_alpha_ejection()
     r_step = 60/(257.5)
     He_profile = ap.CN_diffusion(257,r_step,ap_tT,diff_list,aej_U238,aej_U235,aej_Th,aej_Sm)
+    He_profile = np.array(He_profile)
 
     assert np.isnan(He_profile).any() == False
     assert np.any(He_profile < 0) == False
@@ -114,6 +115,7 @@ def test_zirc_CN_diffusion(zirc):
     aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = zirc.zircon_alpha_ejection()
     r_step = 60/(257.5)
     He_profile = zirc.CN_diffusion(257,r_step,zirc_tT,diff_list,aej_U238,aej_U235,aej_Th,aej_Sm)
+    He_profile = np.array(He_profile)
 
     assert np.isnan(He_profile).any() == False
     assert np.any(He_profile < 0) == False
@@ -132,9 +134,9 @@ def test_ap_He_date(ap):
     lambda_147_yr = 6.54*10**-12
 
     total_He = ft_U238*(np.exp(lambda_238_yr*date_guess)-1)+ft_U235*(np.exp(lambda_235_yr*date_guess)-1)+ft_Th*(np.exp(lambda_232_yr*date_guess)-1)+ft_Sm*(np.exp(lambda_147_yr*date_guess)-1)
-    date = zirc.He_date(total_He, corr_factors)
+    date = ap.He_date(total_He, corr_factors)
 
-    assert math.isclose(date,date_guess,rel_tol=.001)
+    assert math.isclose(date*10**6,date_guess,rel_tol=.0001)
 
 
 def test_zirc_He_date(zirc):
@@ -153,7 +155,7 @@ def test_zirc_He_date(zirc):
     total_He = ft_U238*(np.exp(lambda_238_yr*date_guess)-1)+ft_U235*(np.exp(lambda_235_yr*date_guess)-1)+ft_Th*(np.exp(lambda_232_yr*date_guess)-1)+ft_Sm*(np.exp(lambda_147_yr*date_guess)-1)
     date = zirc.He_date(total_He, corr_factors)
 
-    assert math.isclose(date,date_guess,rel_tol=.001)
+    assert math.isclose(date*10**6,date_guess,rel_tol=.0001)
 
 def test_guenthner_damage(zirc):
     damage = zirc.guenthner_damage()
