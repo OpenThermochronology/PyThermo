@@ -60,7 +60,7 @@ class tT_model:
             Number of model comparisons if comp_type = 'model'. Corresponds to number of curves per tT path. Default is 1.
                 
         std_grain: optional float
-            The user-defined 2 sigma standard deviation in grain size for grain size comparison runs. Can be used if obs_data is 'None'. Default is 0.
+            The user-defined 1 sigma standard deviation in grain size for grain size comparison runs. Can be used if obs_data is 'None'. Default is 0.
         
         log2_nodes: optional int
             The number of nodes (2**log2_nodes + 1) used in the Crank-Nicolson diffusion solver. Default is 8 (256 nodes + 1).
@@ -83,12 +83,14 @@ class tT_model:
         if comp_type == 'size':
             #determine mean, maximum, and minimum grain size 
             #if obs_data is present, use mean from measured, otherwise use grain size in grain_in
-            if obs_data is not None:
+            if obs_data is not None and std_grain == 0:
                 mean_size = np.mean(obs_data[:,3])
-                max_size = np.max(obs_data[:,3])
-                min_size = np.min(obs_data[:,3])
-                
-
+                max_size = mean_size + np.std(obs_data[:,3])
+                min_size = mean_size - np.std(obs_data[:,3])                
+            elif obs_data is not None:
+                mean_size = np.mean(obs_data[:,3])
+                max_size = mean_size + std_grain
+                min_size = mean_size - std_grain
             else:
                 mean_size = grains.iloc[:,3].mean()
                 max_size = mean_size + std_grain
@@ -174,9 +176,9 @@ class tT_model:
 
                 elif grains.iloc[j,0] == 'zircon':
                     if max_size > mean_size:
-                        mean_grain = zircon(mean_size,log2_nodes,zirc_tT,zirc_anneal,U_ppm,Th_ppm,Sm_ppm)
-                        std_plus_grain = zircon(max_size,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
-                        std_minus_grain = zircon(min_size,log2_nodes,zirc_tT,U_ppm,Th_ppm,Sm_ppm)
+                        mean_grain = zircon(mean_size,log2_nodes,zirc_tT,zirc_anneal,U_ppm,Th_ppm,Sm_ppm) 
+                        std_plus_grain = zircon(max_size,log2_nodes,zirc_tT,zirc_anneal,U_ppm,Th_ppm,Sm_ppm)
+                        std_minus_grain = zircon(min_size,log2_nodes,zirc_tT,zirc_anneal,U_ppm,Th_ppm,Sm_ppm)
 
                         #calculate dates
                         mean_date = mean_grain.guenthner_date()
@@ -252,7 +254,7 @@ class tT_model:
         dateeU_fig, (time_temp, date_eU) = plt.subplots(2, 1, figsize=[5,6], dpi=600)
 
         time_temp.set_xlabel('Time (Ma)')
-        time_temp.set_ylabel('Temperature $^\circ$ C')
+        time_temp.set_ylabel('Temperature $\\degree$C')
         date_eU.set_xlabel('eU concentration (ppm)')
         date_eU.set_ylabel('(U-Th)/He Date (Ma)')
 
@@ -279,7 +281,7 @@ class tT_model:
             if np.max(model_data[:,i+1]) > eU_max: eU_max = np.max(model_data[:,i+1])
 
             if comp_type == 'size':
-                #each grain size comparison has three stacked date-eU trends, in this order: mean, +2s, -2s
+                #each grain size comparison has three stacked date-eU trends, in this order: mean, +1s, -1s
                 dates_mean = model_data[0:grain_num,i]
                 eUs_mean = model_data[0:grain_num,i+1]
                 date_eU.plot(eUs_mean,dates_mean,linestyle='-',marker='',color=color_options[i//3])

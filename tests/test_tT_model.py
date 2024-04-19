@@ -24,6 +24,7 @@ def test_ap_forward():
     assert np.any(model_data < 0) == False
     assert np.any(model_data[:,1] < 0) == False
     assert np.any(model_data[:,2] < 0) == False
+    assert np.all(model_data[:,2] == 60)
 
     model_test_no_obs_std.forward(std_grain=10)
     model_data = model_test_no_obs_std.get_model_data()
@@ -32,6 +33,7 @@ def test_ap_forward():
     assert np.any(model_data < 0) == False
     assert np.any(model_data[:,1] < 0) == False
     assert np.any(model_data[:,2] < 0) == False
+    assert model_data[0,2] == 60 and model_data[3,2] == 70 and model_data[6,2] == 50
 
     model_test_obs.forward()
     model_data = model_test_obs.get_model_data()
@@ -40,6 +42,15 @@ def test_ap_forward():
     assert np.any(model_data < 0) == False
     assert np.any(model_data[:,1] < 0) == False
     assert np.any(model_data[:,2] < 0) == False
+
+    model_test_obs.forward(std_grain=10)
+    model_data = model_test_obs.get_model_data()
+    assert np.size(model_data,0) == 9
+    assert np.isnan(model_data).any() == False
+    assert np.any(model_data < 0) == False
+    assert np.any(model_data[:,1] < 0) == False
+    assert np.any(model_data[:,2] < 0) == False
+    assert model_data[0,2] == np.mean(obs_data[:,4]) and model_data[3,2] == np.mean(obs_data[:,4])+10 and model_data[6,2] == np.mean(obs_data[:,4])-10
 
 def test_zirc_forward():
     tT_in = np.array([[0,20],[250,150],[500,20]])
@@ -63,6 +74,7 @@ def test_zirc_forward():
     assert np.any(model_data < 0) == False
     assert np.any(model_data[:,1] < 0) == False
     assert np.any(model_data[:,2] < 0) == False
+    assert np.all(model_data[:,2] == 60)
 
     model_test_no_obs_std.forward(std_grain=10)
     model_data = model_test_no_obs_std.get_model_data()
@@ -71,6 +83,7 @@ def test_zirc_forward():
     assert np.any(model_data < 0) == False
     assert np.any(model_data[:,1] < 0) == False
     assert np.any(model_data[:,2] < 0) == False
+    assert model_data[0,2] == 60 and model_data[3,2] == 70 and model_data[6,2] == 50
 
     model_test_obs.forward()
     model_data = model_test_obs.get_model_data()
@@ -79,6 +92,15 @@ def test_zirc_forward():
     assert np.any(model_data < 0) == False
     assert np.any(model_data[:,1] < 0) == False
     assert np.any(model_data[:,2] < 0) == False
+
+    model_test_obs.forward(std_grain=10)
+    model_data = model_test_obs.get_model_data()
+    assert np.size(model_data,0) == 9
+    assert np.isnan(model_data).any() == False
+    assert np.any(model_data < 0) == False
+    assert np.any(model_data[:,1] < 0) == False
+    assert np.any(model_data[:,2] < 0) == False
+    assert model_data[0,2] == np.mean(obs_data[:,4]) and model_data[3,2] == np.mean(obs_data[:,4])+10 and model_data[6,2] == np.mean(obs_data[:,4])-10
 
 def test_date_eU_plot():
     pass
