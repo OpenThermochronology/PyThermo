@@ -30,15 +30,22 @@ class tT_model:
         self.__grain_in = grain_in
         self.__tT_in = tT_in
         self.__obs_data = obs_data
+        self.__model_data = None
     
     def get_grain_in(self):
         return self.__grain_in
     
-    def tT_in(self):
+    def get_tT_in(self):
         return self.__tT_in
     
     def get_obs_data(self):
         return self.__obs_data
+    
+    def get_model_data(self):
+        return self.__model_data
+    
+    def set_model_data(self,model_data):
+        self.__model_data = model_data
 
     def forward(self, comp_type='size', model_num=1, std_grain=0, log2_nodes=8):
         """ 
@@ -210,6 +217,7 @@ class tT_model:
                     print('Improper mineral type used. Grain number ',j+1,' for tT path ',i+1,' was not modeled.')
                     continue
 
+        self.set_model_data(model_data)
         forward_fig = self.date_eU_plot(model_data,num_grains,'size')
 
         return forward_fig
