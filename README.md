@@ -23,7 +23,7 @@ pip install pythermo
 
 ## Usage
 
-Once you've downloaded or installed the package, and if you're just interested in running some forward models, the quickest way to get started is to modify the Jupyter Notebook file `template.ipynb` that is included in the `examples `folder. The notebook contains markdown and code that explains and demonstrates forward model date-eU comparisons for the apatite and zircon (U-Th)/He system. The forward modeling method is one particular approach and you can (and should!) call lower level methods to suite your needs. The `tT_path `and `crystal` classes contain several methods that you may want to call. A basic example of one way to use lower-level methods is included in `template.ipynb`. Please read the descriptions for each method in the source code for more details.
+Once you've downloaded or installed the package, and if you're just interested in running some forward models, the quickest way to get started is to modify the Jupyter Notebook file `template.ipynb` that is included in the `examples` folder. The notebook contains markdown and code that explains and demonstrates forward model date-eU comparisons for the apatite and zircon (U-Th)/He system. The forward modeling method is one particular approach and you can (and should!) call lower level methods to suite your needs. The `tT_path` and `crystal` classes contain several methods that you may want to call. A basic example of one way to use lower-level methods is included in `template.ipynb`. Please read the descriptions for each method in the source code for more details.
 
 ## Citation
 
