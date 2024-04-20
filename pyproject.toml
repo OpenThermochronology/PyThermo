@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "PyThermo"
+name = "pythermo"
 dynamic = ["version"]
 authors = [
   { name="William Guenthner", email="wrg@illinois.edu" },
@@ -21,3 +21,4 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/OpenThermochronology/PyThermo"
+Issues = "https://github.com/OpenThermochronology/PyThermo/issues"
