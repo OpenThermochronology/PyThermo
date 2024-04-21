@@ -1,10 +1,18 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0","setuptools-git-versioning"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools-git-versioning]
+enabled = true
 
 [project]
 name = "pythermo"
 dynamic = ["version"]
+dependencies = [
+  "numpy",
+  "scipy",
+  "matplotlib",
+]
 authors = [
   { name="William Guenthner", email="wrg@illinois.edu" },
 ]
