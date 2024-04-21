@@ -1,7 +1,9 @@
 # PyThermo
 
 [![DOI](osf_io_BNUVZ.svg)](https://doi.org/10.17605/OSF.IO/BNUVZ)
-[CI][ci-url]
+[![CI][ci-img]][ci-url]
+[![PyPI - Version][pypi-img]][pypi-url]
+
 
 A set of classes and methods for performing various modeling and computational tasks in the field of low-temperature thermochronology. The current focus is on forward modeling of apatite and zircon (U-Th)/He data using various diffusion and damage annealing kinetic models. Future releases will expand upon the available kinetic models and mineral systems, and introduce additional methods, such as forward modeling of Arrhenius relationships.
 
@@ -40,3 +42,5 @@ You can find various citation styles for this package [here](https://doi.org/10.
 
 [ci-img]: https://github.com/OpenThermochronology/PyThermo/actions/workflows/CI.yml/badge.svg?branch=main
 [ci-url]: https://github.com/OpenThermochronology/PyThermo/actions/workflows/CI.yml
+[pypi-img]: https://img.shields.io/pypi/v/pythermo
+[pypi-url]: https://pypi.org/project/pythermo/
