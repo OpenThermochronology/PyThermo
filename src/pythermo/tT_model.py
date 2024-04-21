@@ -5,6 +5,8 @@ Particular approaches to forward modeling and plotting apatite and zircon (U-Th)
 
 """
 import matplotlib.pyplot as plt
+import matplotlib.cm as mplcm
+import matplotlib.colors as colors
 from cycler import cycler
 from .constants import np
 from .crystal import apatite, zircon
@@ -271,11 +273,15 @@ class tT_model:
         time_max = 0
         temp_max = 0
 
-        #set up color strings, if greater than 8 date-eU/tT sets, switch to viridis gradational color scheme
-        if np.size(model_data,1)/3 < 8:
+        #set up color strings, if greater than 8 date-eU/tT sets, switch to plasma gradational color scheme
+        if np.size(model_data,1)/3 <= 8:
             color_options = ['xkcd:black','xkcd:royal blue','xkcd:red','xkcd:sky','xkcd:lime','xkcd:dark purple','xkcd:rose','xkcd:grey']
         else:
-            color_options = []
+            num_of_colors = np.size(model_data,1)/3
+            color_map = plt.get_cmap('plasma')
+            color_norm = colors.Normalize(vmin=0, vmax=num_of_colors-1)
+            scalar_map = mplcm.ScalarMappable(norm=color_norm, cmap=color_map)
+            color_options = [scalar_map.to_rgba(i) for i in range(num_of_colors)]
 
         #line option cycler for model comparisons
         line_options = cycler(line_style=['-','--',':','-.'])
