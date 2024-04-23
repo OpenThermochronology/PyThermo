@@ -1,0 +1,15 @@
+name: pythermo
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - numpy
+  - matplotlib
+  - pandas
+  - scipy
+  - jupyter
+  - jupyter-book
+  - pip:
+    -pythermo
