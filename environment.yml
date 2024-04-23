@@ -12,4 +12,4 @@ dependencies:
   - jupyter
   - jupyter-book
   - pip:
-    -pythermo
+    - pythermo
