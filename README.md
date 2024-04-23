@@ -3,6 +3,7 @@
 [![DOI](osf_io_BNUVZ.svg)](https://doi.org/10.17605/OSF.IO/BNUVZ)
 [![CI][ci-img]][ci-url]
 [![PyPI - Version][pypi-img]][pypi-url]
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/OpenThermochronology/PyThermo/HEAD?urlpath=https%3A%2F%2Fgithub.com%2FOpenThermochronology%2FPyThermo%2Fblob%2Fmain%2Fexamples%2Ftemplate.ipynb)
 
 
 A set of classes and methods for performing various modeling and computational tasks in the field of low-temperature thermochronology. The current focus is on forward modeling of apatite and zircon (U-Th)/He data using various diffusion and damage annealing kinetic models. Future releases will expand upon the available kinetic models and mineral systems, and introduce additional methods, such as forward modeling of Arrhenius relationships.
