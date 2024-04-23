@@ -62,43 +62,51 @@ class tT_path:
         time_list = []
 
         #for loop steps through each segment of tTin
-        for i in range(np.size(self.__tTin,0)-1, 0, -1):
+        for i in range(np.size(self.__tTin, 0) - 1, 0, -1):
             #rate of temperature change (oC/m.y.)
-            rate=(self.__tTin[i,1]-self.__tTin[i-1,1])/(self.__tTin[i,0]-self.__tTin[i-1,0])
+            rate=(self.__tTin[i,1] - self.__tTin[i - 1, 1]) / (
+                self.__tTin[i, 0] - self.__tTin[i - 1, 0]
+            )
             abs_rate = abs(rate)
-            temp_per_time_step=abs_rate*default_time_step
+            temp_per_time_step = abs_rate * default_time_step
             
-            if(temp_per_time_step<=self.__precision):
-                current_default_time_step=default_time_step
+            if temp_per_time_step <= self.__precision:
+                current_default_time_step = default_time_step
             else:
-                current_default_time_step=self.__precision/abs_rate
+                current_default_time_step = self.__precision/abs_rate
 
             time_step = current_default_time_step
-            if(time_step > previous_time_step*self.__acceleration):
-                time_step = previous_time_step*self.__acceleration
+            if time_step > previous_time_step * self.__acceleration:
+                time_step = previous_time_step * self.__acceleration
             
             #conversion of number of steps to an int rounds down
-            #will result in some cases to a relatively small amount of round off error 
-            number_of_steps = int((self.__tTin[i,0]-self.__tTin[i-1,0])/time_step)
+            #results in some cases to a relatively small amount of round off error 
+            number_of_steps = int(
+                (self.__tTin[i, 0] - self.__tTin[i - 1, 0]) / time_step
+            )
             
             #some error proofing included just in case
-            time_segment = [self.__tTin[i,0] - time_step*j for j in range(number_of_steps) if self.__tTin[i,0] - time_step*j > self.__tTin[i-1,0]]
+            time_segment = [
+                self.__tTin[i,0] - time_step * j 
+                for j in range(number_of_steps) 
+                if self.__tTin[i,0] - time_step*j > self.__tTin[i - 1, 0]
+            ]
             
             previous_time_step = time_step
-            time_list = time_list+time_segment
+            time_list = time_list + time_segment
 
         #add on the last time step (present day) and interpolate
         time_list.append(0)
-        temp_out = np.interp(time_list,self.__tTin[:,0],self.__tTin[:,1])
+        temp_out = np.interp(time_list, self.__tTin[:, 0], self.__tTin[:, 1])
 
         #convert time to secs and temperature to Kelvin
         time_array = np.array(time_list) * sec_per_myr
         temp_out = temp_out + 273.15
-        tT_out = np.array([time_array,temp_out])
+        tT_out = np.array([time_array, temp_out])
 
         return tT_out.transpose()
 
-    def anneal(self,kinetics):
+    def anneal(self, kinetics):
         """
         Damage annealing method using the equivalent time concept. For a given tT path, this method determines how far back in time information about annealing is retained and therefore relevant for diffusion and (U-Th)/He date calculation. The initial search algorithm for the oldest relevant track is based on Rich Ketcham's RDAAM code.
         
@@ -136,138 +144,155 @@ class tT_path:
 
         #interpolate tT path
         interp_tT = self.tT_interpolate()
-        tT_len = np.size(interp_tT,0)
+        tT_len = np.size(interp_tT, 0)
 
         #find the oldest track that still exists at the present day, store its annealing history in a list
         t_eq = 0.0
-        temp_mean = np.log(2/(interp_tT[tT_len-2,1] + interp_tT[tT_len-1,1]))
+        temp_mean = np.log(2 / (interp_tT[tT_len - 2, 1] + interp_tT[tT_len - 1, 1]))
         
         #youngest track is unannealed
         oldest_track_list = [1]
         
-        for i in range(tT_len-2,-1,-1):
-            old_track_time = interp_tT[i,0] - interp_tT[i+1,0] + t_eq
+        for i in range(tT_len - 2, -1, -1):
+            old_track_time = interp_tT[i, 0] - interp_tT[i + 1, 0] + t_eq
 
             #just in case there's a zero time step
-            if(old_track_time <= 0): continue
+            if old_track_time <= 0: 
+                continue
 
-            r = (C0+C1*((np.log(old_track_time)-C2)/(temp_mean-C3)))**(1/alpha) + 1
+            r = (
+                C0 + C1 * ((np.log(old_track_time) - C2) / (temp_mean - C3))
+                ) ** (1 / alpha) + 1
 
-            if(r<=0):
+            if r<=0:
                 r = 0.0
             else:
                 r = 1/r
             
-            oldest_track_list.insert(0,r)
+            oldest_track_list.insert(0, r)
 
             #are we at the oldest? 
-            if(r<=total_anneal):
-                oldest_track_list[0]=0
+            if r <= total_anneal:
+                oldest_track_list[0] = 0
                 present_old_track = i
                 break
             #convert to reduced density (mineral type dependent)
             else:
-                if(mineral_type == 'apatite'):
-                    rc_lr = ((r - rmr0)/(1 - rmr0))**kappa
-                    if(rc_lr >= 0.765 ):
-                        oldest_track_list[0] = 1.6*rc_lr - 0.6
+                if mineral_type == 'apatite':
+                    rc_lr = ((r - rmr0)/(1 - rmr0)) ** kappa
+                    if rc_lr >= 0.765:
+                        oldest_track_list[0] = 1.6 * rc_lr - 0.6
                     else:
-                        oldest_track_list[0] = 9.205*rc_lr**2 - 9.157*rc_lr + 2.269
+                        oldest_track_list[0] = 9.205 * rc_lr**2 - 9.157 * rc_lr + 2.269
                         
-                elif(mineral_type == 'zircon'):
+                elif mineral_type == 'zircon':
                     oldest_track_list[0] = 1.25 * (r - 0.2)
             
             #calculate t_eq, prevent subzero indexing
-            if(i == 0):
+            if i == 0:
                 present_old_track = 0
                 break
-            elif(r<1):
-                temp_mean = np.log(2/(interp_tT[i-1,1] + interp_tT[i,1]))
-                t_eq = np.exp(C2+(temp_mean-C3)*(((1/r)-1)**alpha-C0)/C1)
+            elif r<1:
+                temp_mean = np.log(2 / (interp_tT[i - 1, 1] + interp_tT[i, 1]))
+                t_eq = np.exp(
+                    C2 + (temp_mean - C3) * (((1 / r) - 1) ** alpha - C0) / C1
+                )
 
         #now find the oldest track that still existed when the present day oldest track formed
-        if(present_old_track > 0):
+        if present_old_track > 0:
             t_eq = 0.0
-            for i in range(present_old_track-1,-1,-1):
-                oldest_track_time = interp_tT[i,0] - interp_tT[i+1,0] + t_eq
+            for i in range(present_old_track - 1, -1, -1):
+                oldest_track_time = interp_tT[i, 0] - interp_tT[i + 1, 0] + t_eq
 
                 #just in case there's a zero time step
-                if(oldest_track_time <= 0): continue
+                if oldest_track_time <= 0: 
+                    continue
 
-                r = (C0+C1*((np.log(oldest_track_time)-C2)/(temp_mean-C3)))**(1/alpha) + 1
+                r = (
+                    C0 + C1 * ((np.log(oldest_track_time) - C2) / (temp_mean - C3))
+                    ) ** (1 / alpha) + 1
 
-                if(r<=0):
+                if r <= 0:
                     r = 0.0
                 else:
-                    r = 1/r
+                    r = 1 / r
 
                 #are we at the oldest?
-                if(r<=total_anneal):
+                if r <= total_anneal:
                     oldest_track = i
                     break
                 
                 #calculate t_eq, prevent subzero indexing
-                if(i == 0):
+                if i == 0:
                     oldest_track = 0
                     break
-                elif(r<1):
-                    temp_mean = np.log(2/(interp_tT[i-1,1] + interp_tT[i,1]))
-                    t_eq = np.exp(C2+(temp_mean-C3)*(((1/r)-1)**alpha-C0)/C1)
+                elif r < 1:
+                    temp_mean = np.log(2 / (interp_tT[i - 1, 1] + interp_tT[i, 1]))
+                    t_eq = np.exp(
+                        C2 + (temp_mean - C3) * (((1 / r) - 1) ** alpha - C0) / C1
+                    )
 
         else:
             oldest_track = 0
 
         #calculate the reduced length 2D array, only go back to the oldest track
         relevant_tracks = tT_len - oldest_track
-        rho_r_array = np.zeros((relevant_tracks,relevant_tracks))
+        rho_r_array = np.zeros((relevant_tracks, relevant_tracks))
         
         #shorten the interpolated tT path
         interp_tT = interp_tT[oldest_track:tT_len]
 
         #fill in youngest row of tracks (history of track that lives to present day)
-        rho_r_array[relevant_tracks-1,present_old_track-oldest_track:relevant_tracks] = oldest_track_list
+        rho_r_array[
+            relevant_tracks - 1, present_old_track - oldest_track : relevant_tracks
+        ] = oldest_track_list
 
         #fill in the rest
-        for i in range(relevant_tracks-2,-1,-1):
+        for i in range(relevant_tracks - 2, -1, -1):
             t_eq = 0.0
-            temp_mean = np.log(2/(interp_tT[i,1] + interp_tT[i+1,1]))
+            temp_mean = np.log(2 / (interp_tT[i, 1] + interp_tT[i + 1, 1]))
             
-            for j in range(i,-1,-1):
-                time_step = interp_tT[j,0] - interp_tT[j+1,0] + t_eq
+            for j in range(i, -1, -1):
+                time_step = interp_tT[j, 0] - interp_tT[j + 1, 0] + t_eq
                 
                 #just in case there's a zero time step
-                if(time_step <= 0): continue
+                if time_step <= 0: 
+                    continue
                 
-                r = (C0+C1*((np.log(time_step)-C2)/(temp_mean-C3)))**(1/alpha) + 1
+                r = (
+                    C0 + C1 * ((np.log(time_step) - C2) / (temp_mean - C3))
+                ) ** (1 / alpha) + 1
                 
-                if(r<=0):
+                if r <= 0:
                     r = 0.0
                 else:
-                    r = 1/r
+                    r = 1 / r
 
                 #convert to reduced density (mineral type dependent)
-                if(r<=total_anneal):
-                    rho_r_array[i,j] = 0
+                if r <= total_anneal:
+                    rho_r_array[i, j] = 0
                     break
                 else:
-                    if(mineral_type == 'apatite'):
-                        rc_lr = ((r - rmr0)/(1 - rmr0))**kappa
-                        if(rc_lr >= 0.765 ):
-                            rho_r_array[i,j] = 1.6*rc_lr -0.6
+                    if mineral_type == 'apatite':
+                        rc_lr = ((r - rmr0) / (1 - rmr0)) ** kappa
+                        if rc_lr >= 0.765:
+                            rho_r_array[i, j] = 1.6 * rc_lr -0.6
                         else:
-                            rho_r_array[i,j] = 9.205*rc_lr**2 - 9.157*rc_lr + 2.269
+                            rho_r_array[i, j] = 9.205 * rc_lr**2 - 9.157 * rc_lr + 2.269
                         
-                    elif(mineral_type == 'zircon'):
-                        rho_r_array[i,j] = 1.25 * (r - 0.2)
+                    elif mineral_type == 'zircon':
+                        rho_r_array[i, j] = 1.25 * (r - 0.2)
                 
                 #calculate t_eq, prevent subzero indexing
-                if(j==0):
+                if j == 0:
                     break
                 elif(r<1):
-                    temp_mean = np.log(2/(interp_tT[j-1,1] + interp_tT[j,1]))
-                    t_eq = np.exp(C2+(temp_mean-C3)*(((1/r)-1)**alpha-C0)/C1)
+                    temp_mean = np.log(2 / (interp_tT[j - 1, 1] + interp_tT[j, 1]))
+                    t_eq = np.exp(
+                        C2 + (temp_mean - C3) * (((1 / r) - 1) ** alpha - C0) / C1
+                    )
 
-        return rho_r_array,interp_tT
+        return rho_r_array, interp_tT
 
     def guenthner_anneal(self):
         """
@@ -292,11 +317,11 @@ class tT_path:
         rmr0 = None
         kappa = None
 
-        kinetics_list = [C0,C1,C2,C3,alpha,total_anneal,rmr0,kappa]
+        kinetics_list = [C0, C1, C2, C3, alpha,total_anneal, rmr0, kappa]
 
-        rho_r_array,relevant_tT = self.anneal(kinetics_list)
+        rho_r_array, relevant_tT = self.anneal(kinetics_list)
 
-        return rho_r_array,relevant_tT
+        return rho_r_array, relevant_tT
         
     def ketcham_anneal(self, rmr0=0.83):
         """
@@ -324,12 +349,12 @@ class tT_path:
         C3 = -7.91715
         alpha = 0.04672
 
-        kappa = 1.04-rmr0
+        kappa = 1.04 - rmr0
         B2_total_anneal = 0.55
-        total_anneal = B2_total_anneal**(1/kappa) * (1-rmr0) + rmr0
+        total_anneal = B2_total_anneal ** (1 / kappa) * (1 - rmr0) + rmr0
 
-        kinetics_list = [C0,C1,C2,C3,alpha,total_anneal,rmr0,kappa]
+        kinetics_list = [C0, C1, C2, C3, alpha,total_anneal, rmr0, kappa]
 
-        rho_r_array,relevant_tT = self.anneal(kinetics_list)
+        rho_r_array, relevant_tT = self.anneal(kinetics_list)
         
-        return rho_r_array,relevant_tT
+        return rho_r_array, relevant_tT
