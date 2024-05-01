@@ -376,10 +376,11 @@ class crystal:
                     * aej_Th[j]
                     * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
                     + aej_Sm[j]
-                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young)))
+                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
+                )
                 production = alphas * (j + 0.5) * r_step * beta
                 
-                d[j] = (2.0-beta) * u[j] - u[j+1] - u[j-1] - production
+                d[j] = (2.0 - beta) * u[j] - u[j+1] - u[j-1] - production
             
             #solve it using tridiaonal matrix algorithm, for instructional purposes only, u becomes u_n+1 and repeat
             #u = self.tridiag(a, diagonal, c, d, nodes)
@@ -391,6 +392,212 @@ class crystal:
         #convert u to the He concentration profile
         He_profile = [u[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
         return He_profile
+    
+    def MP_diffusion(
+            self, nodes, r_step, tT_path, diff_parameters, tolerance, aej_U238, aej_U235, aej_Th, aej_Sm
+            ):
+        """ 
+        Solves for diffusion in a crystal with multiple diffusion pathways, a fast path and a volume path, using a Crank-Nicoloson scheme. Based on the set-up of Lee and Aldama (1992) (https://doi.org/10.1016/0098-3004(92)90093-7), crucial their algorithm for solving equations 18a and 18b. Uses equatios from Ketcham (2005) (https://doi.org/10.2138/rmg.2005.58.11), specifically equation 21 for tridiagonal setup, and equations 22 and 26 for boundary conditions (which are Neumann and Dirichlet-type in both publications)
+
+        Parameters
+        ----------
+
+        nodes: int
+            Number of nodes for 1D finite difference diffusion solver
+
+        r_step: float
+            Grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
+
+        tT_path: 2D array of floats
+            Time temperature history along which to calculate diffusion
+
+        diff_parameters: dictionary of floats
+            Fitted parameters for multi-path diffusion
+
+        tolerance: float
+            Convergence criterion for iterations diffusion algorithm
+
+        aej_U238: 1D array or list
+            Alpha ejected 1D profile for 238U (in atoms/g), must be length of nodes
+
+        aej_U235: 1D array or list
+            Alpha ejected 1D profile for 235U (in atoms/g), must be length of nodes
+        
+        aej_Th: 1D array or list
+            Alpha ejected 1D profile for 232Th (in atoms/g), must be length of nodes
+        
+        aej_Sm: 1D array or list
+            Alpha ejected 1D profile for 147Sm (in atoms/g), must be length of nodes
+
+
+        Returns
+        -------
+
+        bulk_He_profile: list of floats
+            The 1D radial profile of diffused He
+        
+        fast_He_profile: list of floats
+            The 1D radial profile of diffused He in the fast pathways
+
+        lat_He_profile: list of floats
+            The 1D radial profile of diffused He in the lattice
+
+        """
+        #unpack diff_parameters
+        D_sc = diff_parameters['D_sc']
+        D_v = diff_parameters['D_v']
+        kappa_1 = diff_parameters['kappa_1']
+        kappa_2 = diff_parameters['kappa_2']
+        f = diff_parameters['f']
+
+        #set up arrays for tridiagonal matrix
+        #u is the bulk, u_fp is the fast path, and u_lat is the lattice coordinate transform vector
+        #u = vr, v is the He profile, r is radius 
+        u = np.zeros(nodes)
+        u_fp = np.zeros(nodes)
+        u_lat = np.zeros(nodes)
+
+        #setup diagonal and d (RHS vector, Ax = d)     
+        diagonal = np.zeros(nodes)
+        d = np.zeros(nodes)
+        
+        #a is sub-, and c is supra-diagonal
+        a = np.ones(nodes)
+        a[-1] = 0
+        c = np.ones(nodes)
+        c[0] = 0
+
+        diff_max = 1.0
+
+        #step through time from old to young
+        for i in range(np.size(tT_path, 0) - 1):
+            t_old = tT_path[i, 0]
+            t_young = tT_path[i + 1, 0]
+            dt = t_old - t_young
+            
+            beta_sc = (2.0 * r_step**2) / (D_sc[i] * dt)
+            beta_v = (2.0 * r_step**2) / (D_v[i] * dt)
+
+            #iterate within each time segment for distribution between fast path and lattice
+            while diff_max > tolerance:
+                
+                #generate RHS vector for fast path concentration
+                
+                #boundary conditions, math reflects 2 imaginary nodes that lie outside the strict scope and indexing of "nodes"
+
+                #Neumann inner boundary condition (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
+            
+                #production term for 1st node
+                alphas = (
+                    8
+                    * aej_U238[0]
+                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                    + 7
+                    * aej_U235[0]
+                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                    + 6
+                    * aej_Th[0]
+                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                    + aej_Sm[0]
+                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
+                )
+                production = alphas * f * 0.5 * r_step * beta_sc
+                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
+
+                diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp[0] - u_fp[1] - production + partition
+
+                #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
+
+                #production term for last node
+                alphas = (
+                    8
+                    * aej_U238[-1]
+                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                    + 7
+                    * aej_U235[-1]
+                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                    + 6
+                    * aej_Th[-1]
+                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                    + aej_Sm[-1]
+                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
+                )
+                production = alphas * (nodes - 0.5) * r_step * beta_sc
+                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
+
+                diagonal[-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp[-1] - u_fp[-2] - production + partition
+
+                #fill in the rest
+                diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                for j in range(1, nodes - 1):
+                    #production term 
+                    alphas = (
+                        8
+                        * aej_U238[j]
+                        * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                        + 7
+                        * aej_U235[j]
+                        * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                        + 6
+                        * aej_Th[j]
+                        * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                        + aej_Sm[j]
+                        * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
+                    )
+                    production = alphas * (j + 0.5) * r_step * beta_sc
+                    partition = beta_sc * 0.5 * dt * kappa_2 * u_lat[j]
+                
+                    d[j] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp[j] - u_fp[j+1] - u_fp[j-1] - production + partition
+
+                #solve for fast path concentration using scipy banded solver
+                A = [c, diagonal, a]
+                u_fp = solve_banded((1, 1), A, d)
+                                     
+                #generate RHS vector for lattice concentration from fast path solution
+
+                #Neumann inner BC
+                alphas = (
+                    8
+                    * aej_U238[0]
+                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                    + 7
+                    * aej_U235[0]
+                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                    + 6
+                    * aej_Th[0]
+                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                    + aej_Sm[0]
+                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
+                )
+                production = alphas * (1 - f) * 0.5 * r_step * beta_v
+                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
+
+                diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp[0] - u_fp[1] - production + partition
+
+
+                #solve for lattice concentration using scipy banded solver
+                A = [c, diagonal, a]
+                u_lat = solve_banded((1, 1), A, d)
+
+                #generate RHS vector again for fast path concentration from lattice solution
+
+                #solve for fast path concentration once more using scipy banded solver
+                A = [c, diagonal, a]
+                u_fp = solve_banded((1, 1), A, d)
+
+                #determine diff_max to compare for next iteration of while loop
+                diff_max = 0
+        
+        #convert each u profile to a He concentration profile
+        fast_He_profile = [u_fp[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
+        lat_He_profile = [u_lat[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
+        #CONFIRM THAT IT'S ADDITIVE
+        bulk_He_profile = [(u_fp[i] + u_lat[i])/ ((i + 0.5) * r_step) for i in range(0, nodes)]
+
+        return bulk_He_profile, fast_He_profile, lat_He_profile
 
     def He_date(self, total_He, corr_factors):
         """ 
