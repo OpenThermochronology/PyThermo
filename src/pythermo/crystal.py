@@ -317,10 +317,7 @@ class crystal:
             
             beta = (2.0 * r_step**2) / (diffs[i] * dt) 
 
-            #boundary conditions, math reflects 2 imaginary nodes that lie outside the strict scope and indexing of "nodes"
-
             #Neumann inner boundary condition (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
-            
             #production term for 1st node
             alphas = (
                 8
@@ -341,7 +338,6 @@ class crystal:
             d[0] = (3.0 - beta) * u[0] - u[1] - production
 
             #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
-
             #production term for last node
             alphas = (
                 8
@@ -478,12 +474,8 @@ class crystal:
             beta_sc = (2.0 * r_step**2) / (D_sc[i] * dt)
             beta_v = (2.0 * r_step**2) / (D_v[i] * dt)
 
-            #generate RHS vector for fast path concentration
-                
-            #boundary conditions, 2 imaginary nodes that lie outside the strict scope and indexing of "nodes"
-
+            #generate RHS vector for fast path concentration 
             #Neumann inner BC (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
-            
             #production term for 1st node
             alphas = (
                 8
@@ -505,7 +497,6 @@ class crystal:
             d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition
 
             #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
-
             #production term for last node
             alphas = (
                 8
@@ -561,7 +552,6 @@ class crystal:
                 u_lat_old = u_lat
                                      
                 #generate RHS vector for lattice concentration from fast path solution
-
                 #Neumann inner BC
                 alphas = (
                     8
@@ -597,7 +587,7 @@ class crystal:
                     + aej_Sm[-1]
                     * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
                 )
-                production = alphas * (1 - f) * 0.5 * r_step * beta_v
+                production = alphas * (1 - f) * (nodes - 0.5) * r_step * beta_v
                 partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[-1]
                 partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[-1]
 
@@ -625,12 +615,74 @@ class crystal:
                     partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[j]
                     d[j] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[j] - u_lat_n[j+1] - u_lat_n[j-1] -  production - partition - partition_n_plus
 
-
                 #solve for lattice concentration using scipy banded solver
                 A = [c, diagonal, a]
                 u_lat = solve_banded((1, 1), A, d)
 
                 #generate RHS vector again for fast path concentration from lattice solution
+                #Neumann inner BC
+                alphas = {
+                    8
+                    * aej_U238[0]
+                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                    + 7
+                    * aej_U235[0]
+                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                    + 6
+                    * aej_Th[0]
+                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                    + aej_Sm[0]
+                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young)) 
+                }
+                production = alphas * f * 0.5 * r_step * beta_sc
+                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[0]
+                partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
+
+                diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition + partition_n_plus
+
+                #Dirichlet outer BC
+                alphas = {
+                    8
+                    * aej_U238[-1]
+                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                    + 7
+                    * aej_U235[-1]
+                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                    + 6
+                    * aej_Th[-1]
+                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                    + aej_Sm[-1]
+                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young)) 
+                }
+                production = alphas * f * (nodes - 0.5) * r_step * beta_sc
+                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
+                partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
+
+                diagonal[-1] = (-2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1)
+                d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition + partition_n_plus
+
+                #fill in the rest
+                diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                for j in range(1, nodes - 1):
+                    alphas = {
+                        8
+                        * aej_U238[j]
+                        * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                        + 7
+                        * aej_U235[j]
+                        * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                        + 6
+                        * aej_Th[j]
+                        * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                        + aej_Sm[j]
+                        * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young)) 
+                    }
+                    production = alphas * f * (j + 0.5) * r_step * beta_sc
+                    partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[j]
+                    partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[j]
+
+                    d[j] = (-2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[j] - u_fp_n[j+1] - u_fp_n[j-1] - production + partition + partition_n_plus
 
                 #solve for fast path concentration once more using scipy banded solver
                 A = [c, diagonal, a]
