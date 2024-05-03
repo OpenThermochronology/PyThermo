@@ -451,11 +451,13 @@ class crystal:
         f = diff_parameters['f']
 
         #set up arrays for tridiagonal matrix
-        #u is the bulk, u_fp is the fast path, and u_lat is the lattice coordinate transform vector
-        #u = vr, v is the He profile, r is radius 
-        u = np.zeros(nodes)
+        #u = vr, v is the He profile, r is radius
+        #u_fp is the fast path, and u_lat is the lattice coordinate transform vector
+        #u_fp_n and u_lat_n are previous time step vectors 
         u_fp = np.zeros(nodes)
         u_lat = np.zeros(nodes)
+        u_fp_n = np.zeros(nodes)
+        u_lat_n = np.zeros(nodes)
 
         #setup diagonal and d (RHS vector, Ax = d)     
         diagonal = np.zeros(nodes)
@@ -467,8 +469,6 @@ class crystal:
         c = np.ones(nodes)
         c[0] = 0
 
-        diff_max = 1.0
-
         #step through time from old to young
         for i in range(np.size(tT_path, 0) - 1):
             t_old = tT_path[i, 0]
@@ -478,82 +478,87 @@ class crystal:
             beta_sc = (2.0 * r_step**2) / (D_sc[i] * dt)
             beta_v = (2.0 * r_step**2) / (D_v[i] * dt)
 
-            #iterate within each time segment for distribution between fast path and lattice
-            while diff_max > tolerance:
+            #generate RHS vector for fast path concentration
                 
-                #generate RHS vector for fast path concentration
-                
-                #boundary conditions, math reflects 2 imaginary nodes that lie outside the strict scope and indexing of "nodes"
+            #boundary conditions, 2 imaginary nodes that lie outside the strict scope and indexing of "nodes"
 
-                #Neumann inner boundary condition (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
+            #Neumann inner BC (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
             
-                #production term for 1st node
+            #production term for 1st node
+            alphas = (
+                8
+                * aej_U238[0]
+                * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                + 7
+                * aej_U235[0]
+                * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                + 6
+                * aej_Th[0]
+                * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                + aej_Sm[0]
+                * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
+            )
+            production = alphas * f * 0.5 * r_step * beta_sc
+            partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[0]
+
+            diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+            d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition
+
+            #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
+
+            #production term for last node
+            alphas = (
+                8
+                * aej_U238[-1]
+                * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                + 7
+                * aej_U235[-1]
+                * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                + 6
+                * aej_Th[-1]
+                * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                + aej_Sm[-1]
+                * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
+            )
+            production = alphas * f * (nodes - 0.5) * r_step * beta_sc
+            partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
+
+            diagonal[-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+            d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition
+
+            #fill in the rest
+            diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+            for j in range(1, nodes - 1):
+                #production term 
                 alphas = (
                     8
-                    * aej_U238[0]
+                    * aej_U238[j]
                     * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
                     + 7
-                    * aej_U235[0]
+                    * aej_U235[j]
                     * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
                     + 6
-                    * aej_Th[0]
+                    * aej_Th[j]
                     * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                    + aej_Sm[0]
+                    + aej_Sm[j]
                     * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
                 )
-                production = alphas * f * 0.5 * r_step * beta_sc
-                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
-
-                diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp[0] - u_fp[1] - production + partition
-
-                #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
-
-                #production term for last node
-                alphas = (
-                    8
-                    * aej_U238[-1]
-                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                    + 7
-                    * aej_U235[-1]
-                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                    + 6
-                    * aej_Th[-1]
-                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                    + aej_Sm[-1]
-                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-                )
-                production = alphas * (nodes - 0.5) * r_step * beta_sc
-                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
-
-                diagonal[-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp[-1] - u_fp[-2] - production + partition
-
-                #fill in the rest
-                diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                for j in range(1, nodes - 1):
-                    #production term 
-                    alphas = (
-                        8
-                        * aej_U238[j]
-                        * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                        + 7
-                        * aej_U235[j]
-                        * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                        + 6
-                        * aej_Th[j]
-                        * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                        + aej_Sm[j]
-                        * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-                    )
-                    production = alphas * (j + 0.5) * r_step * beta_sc
-                    partition = beta_sc * 0.5 * dt * kappa_2 * u_lat[j]
+                production = alphas * f * (j + 0.5) * r_step * beta_sc
+                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[j]
                 
-                    d[j] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp[j] - u_fp[j+1] - u_fp[j-1] - production + partition
+                d[j] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[j] - u_fp_n[j+1] - u_fp_n[j-1] - production + partition
 
                 #solve for fast path concentration using scipy banded solver
                 A = [c, diagonal, a]
                 u_fp = solve_banded((1, 1), A, d)
+             
+            #iterate within each time segment for distribution between fast path and lattice
+            diff_max = 1.0
+            while diff_max > tolerance:
+
+                #for comparison STILL NOT SURE YET WHERE THIS SHOULD GO!!!
+                u_fp_old = u_fp
+                u_lat_old = u_lat
                                      
                 #generate RHS vector for lattice concentration from fast path solution
 
@@ -572,10 +577,53 @@ class crystal:
                     * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
                 )
                 production = alphas * (1 - f) * 0.5 * r_step * beta_v
-                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
+                partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[0]
+                partiton_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[0]
 
-                diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp[0] - u_fp[1] - production + partition
+                diagonal[0] = -3.0 - beta_v + beta_v * 0.5 * dt * kappa_2
+                d[0] = (3.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[0] - u_lat_n[1] - production - partition - partiton_n_plus
+
+                #Dirichlet outer BC
+                alphas = (
+                    8
+                    * aej_U238[-1]
+                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                    + 7
+                    * aej_U235[-1]
+                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                    + 6
+                    * aej_Th[-1]
+                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                    + aej_Sm[-1]
+                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
+                )
+                production = alphas * (1 - f) * 0.5 * r_step * beta_v
+                partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[-1]
+                partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[-1]
+
+                diagonal[-1] = -2.0 - beta_v + beta_v * 0.5 * dt * kappa_2
+                d[-1] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[-1] - u_lat_n[-2] - production - partition - partition_n_plus
+
+                #fill in the rest
+                diagonal[1:nodes-1] = -2.0 - beta_v + beta_v * 0.5 * dt * kappa_2
+                for j in range(1, nodes - 1):
+                    alphas = {
+                        8
+                        * aej_U238[j]
+                        * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                        + 7
+                        * aej_U235[j]
+                        * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                        + 6
+                        * aej_Th[j]
+                        * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                        + aej_Sm[j]
+                        * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young)) 
+                    }
+                    production = alphas * (1 - f) * (j + 0.5) * r_step * beta_v
+                    partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[j]
+                    partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[j]
+                    d[j] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[j] - u_lat_n[j+1] - u_lat_n[j-1] -  production - partition - partition_n_plus
 
 
                 #solve for lattice concentration using scipy banded solver
@@ -590,6 +638,8 @@ class crystal:
 
                 #determine diff_max to compare for next iteration of while loop
                 diff_max = 0
+            
+            #update u_n vectors and move to the next time step  
         
         #convert each u profile to a He concentration profile
         fast_He_profile = [u_fp[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
