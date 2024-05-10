@@ -455,6 +455,21 @@ class crystal:
         u_fp_n = np.zeros(nodes)
         u_lat_n = np.zeros(nodes)
 
+        #lambda function for alpha production calculation
+        decay = lambda rad_pos, t_1, t_2: (
+                8
+                * aej_U238[rad_pos]
+                * (np.exp(lambda_238 * t_1) - np.exp(lambda_238 * t_2)) 
+                + 7
+                * aej_U235[rad_pos]
+                * (np.exp(lambda_235 * t_1) - np.exp(lambda_235 * t_2)) 
+                + 6
+                * aej_Th[rad_pos]
+                * (np.exp(lambda_232 * t_1) - np.exp(lambda_232 * t_2)) 
+                + aej_Sm[rad_pos]
+                * (np.exp(lambda_147 * t_1) - np.exp(lambda_147 * t_2))
+            )
+
         #setup diagonal and d (RHS vector, Ax = d)     
         diagonal = np.zeros(nodes)
         d = np.zeros(nodes)
@@ -477,19 +492,7 @@ class crystal:
             #generate RHS vector for fast path concentration 
             #Neumann inner BC (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
             #production term for 1st node
-            alphas = (
-                8
-                * aej_U238[0]
-                * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                + 7
-                * aej_U235[0]
-                * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                + 6
-                * aej_Th[0]
-                * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                + aej_Sm[0]
-                * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-            )
+            alphas = decay(0, t_old, t_young)
             production = alphas * f * 0.5 * r_step * beta_sc
             partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[0]
 
@@ -498,19 +501,7 @@ class crystal:
 
             #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
             #production term for last node
-            alphas = (
-                8
-                * aej_U238[-1]
-                * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                + 7
-                * aej_U235[-1]
-                * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                + 6
-                * aej_Th[-1]
-                * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                + aej_Sm[-1]
-                * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-            )
+            alphas = decay(-1, t_old, t_young)
             production = alphas * f * (nodes - 0.5) * r_step * beta_sc
             partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
 
@@ -521,19 +512,7 @@ class crystal:
             diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
             for j in range(1, nodes - 1):
                 #production term 
-                alphas = (
-                    8
-                    * aej_U238[j]
-                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                    + 7
-                    * aej_U235[j]
-                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                    + 6
-                    * aej_Th[j]
-                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                    + aej_Sm[j]
-                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-                )
+                alphas = decay(j, t_old, t_young)
                 production = alphas * f * (j + 0.5) * r_step * beta_sc
                 partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[j]
                 
@@ -545,27 +524,16 @@ class crystal:
              
             #iterate within each time segment for distribution between fast path and lattice
             diff_max = 1.0
-            while diff_max > tolerance:
+            counter = 0
+            while diff_max > tolerance or counter <= 50:
 
-                #for comparison STILL NOT SURE YET WHERE THIS SHOULD GO!!!
+                #for comparison with updated values in diff_max
                 u_fp_old = u_fp
                 u_lat_old = u_lat
                                      
                 #generate RHS vector for lattice concentration from fast path solution
                 #Neumann inner BC
-                alphas = (
-                    8
-                    * aej_U238[0]
-                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                    + 7
-                    * aej_U235[0]
-                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                    + 6
-                    * aej_Th[0]
-                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                    + aej_Sm[0]
-                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-                )
+                alphas = decay(0, t_old, t_young)
                 production = alphas * (1 - f) * 0.5 * r_step * beta_v
                 partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[0]
                 partiton_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[0]
@@ -574,19 +542,7 @@ class crystal:
                 d[0] = (3.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[0] - u_lat_n[1] - production - partition - partiton_n_plus
 
                 #Dirichlet outer BC
-                alphas = (
-                    8
-                    * aej_U238[-1]
-                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                    + 7
-                    * aej_U235[-1]
-                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                    + 6
-                    * aej_Th[-1]
-                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                    + aej_Sm[-1]
-                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-                )
+                alphas = decay(-1, t_old, t_young)
                 production = alphas * (1 - f) * (nodes - 0.5) * r_step * beta_v
                 partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[-1]
                 partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[-1]
@@ -597,19 +553,7 @@ class crystal:
                 #fill in the rest
                 diagonal[1:nodes-1] = -2.0 - beta_v + beta_v * 0.5 * dt * kappa_2
                 for j in range(1, nodes - 1):
-                    alphas = {
-                        8
-                        * aej_U238[j]
-                        * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                        + 7
-                        * aej_U235[j]
-                        * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                        + 6
-                        * aej_Th[j]
-                        * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                        + aej_Sm[j]
-                        * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young)) 
-                    }
+                    alphas = decay(j, t_old, t_young)
                     production = alphas * (1 - f) * (j + 0.5) * r_step * beta_v
                     partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[j]
                     partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[j]
@@ -621,19 +565,7 @@ class crystal:
 
                 #generate RHS vector again for fast path concentration from lattice solution
                 #Neumann inner BC
-                alphas = {
-                    8
-                    * aej_U238[0]
-                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                    + 7
-                    * aej_U235[0]
-                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                    + 6
-                    * aej_Th[0]
-                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                    + aej_Sm[0]
-                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young)) 
-                }
+                alphas = decay(0, t_old, t_young)
                 production = alphas * f * 0.5 * r_step * beta_sc
                 partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[0]
                 partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
@@ -642,19 +574,7 @@ class crystal:
                 d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition + partition_n_plus
 
                 #Dirichlet outer BC
-                alphas = {
-                    8
-                    * aej_U238[-1]
-                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                    + 7
-                    * aej_U235[-1]
-                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                    + 6
-                    * aej_Th[-1]
-                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                    + aej_Sm[-1]
-                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young)) 
-                }
+                alphas = decay(-1, t_old, t_young)
                 production = alphas * f * (nodes - 0.5) * r_step * beta_sc
                 partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
                 partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
@@ -665,19 +585,7 @@ class crystal:
                 #fill in the rest
                 diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
                 for j in range(1, nodes - 1):
-                    alphas = {
-                        8
-                        * aej_U238[j]
-                        * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                        + 7
-                        * aej_U235[j]
-                        * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                        + 6
-                        * aej_Th[j]
-                        * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                        + aej_Sm[j]
-                        * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young)) 
-                    }
+                    alphas = decay(j, t_old, t_young)
                     production = alphas * f * (j + 0.5) * r_step * beta_sc
                     partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[j]
                     partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[j]
@@ -689,14 +597,18 @@ class crystal:
                 u_fp = solve_banded((1, 1), A, d)
 
                 #determine diff_max to compare for next iteration of while loop
-                diff_max = 0
+                xi_max = np.max(np.abs(u_fp - u_fp_old))
+                omega_max = np.max(np.abs(u_lat - u_lat_old))
+                diff_max = max(xi_max, omega_max)
+                counter = counter + 1
             
-            #update u_n vectors and move to the next time step  
+            #update u_n vectors and move to the next time step
+            u_fp_n = u_fp
+            u_lat_n = u_lat  
         
         #convert each u profile to a He concentration profile
         fast_He_profile = [u_fp[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
         lat_He_profile = [u_lat[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
-        #CONFIRM THAT IT'S ADDITIVE
         bulk_He_profile = [(u_fp[i] + u_lat[i])/ ((i + 0.5) * r_step) for i in range(0, nodes)]
 
         return bulk_He_profile, fast_He_profile, lat_He_profile
