@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as mplcm
 import matplotlib.colors as colors
 from cycler import cycler
-from .constants import np
+from .constants import np, gas_constant
 from .crystal import apatite, zircon
 from .tT_path import tT_path
 
@@ -53,7 +53,7 @@ class tT_model:
     def get_model_data(self):
         return self.__model_data
     
-    def set_model_data(self,model_data):
+    def set_model_data(self, model_data):
         self.__model_data = model_data
 
     def forward(self, comp_type='size', model_num=1, std_grain=0, log2_nodes=8):
@@ -489,3 +489,84 @@ class tT_model:
         
         dateeU_fig.tight_layout()
         return dateeU_fig
+    
+    def arrhenius(self, log2_nodes=8):
+        '''
+        Creates and plots a model Arrhenius curve from a step-heating recipe. Model results can be compared to measured data.
+
+        Parameters
+        ----------
+        
+        log2_nodes: optional int
+            The number of nodes (2**log2_nodes + 1) used in the Crank-Nicolson scheme. Default is 8 (256 nodes + 1).
+            
+        Returns
+        -------
+
+        arrhenius_plot: figure object
+            An Arrhenius plot that can be saved and customized.        
+        
+            
+        Columns consist of: mineral type (1st column), dates (2nd column), 2 sigma date error (3rd column), grain size (4th column), U concentration (5th column), Th concentration (6th column), Sm concentration (7th column), damage-diffusivity model (8th column), annealing model (9th column)
+        '''
+        tT_in = self.__tT_in
+        grains = self.__grain_in
+
+        for i in range(len(grains.index)):
+            # unpack data frame 
+            dose_age = grains.iloc[i, 1]
+            size  = grains.iloc[i, 3] * 1 / 10000
+            U_ppm = grains.iloc[i, 4]
+            Th_ppm = grains.iloc[i, 5]
+            Sm_ppm = grains.iloc[i, 6]
+            diff_model = grains.iloc[i, 7]
+            anneal_model = grains.iloc[i, 8]
+
+            if grains.iloc[i, 1] == 'apatite':
+                model_grain = apatite(
+                                size, 
+                                log2_nodes, 
+                                tT_in, 
+                                anneal_model, 
+                                U_ppm, 
+                                Th_ppm, 
+                                Sm_ppm,
+                                )
+                # in cm
+                r_step = model_grain.get_r_step() * 1 / 10000
+            elif grains.iloc[i, 1] == 'zircon':
+                model_grain = zircon(
+                                size, 
+                                log2_nodes, 
+                                tT_in, 
+                                anneal_model, 
+                                U_ppm, 
+                                Th_ppm, 
+                                Sm_ppm,
+                                )
+                # in cm
+                r_step = model_grain.get_r_step() * 1 / 10000
+            else:
+                return None
+
+            #set diffusion model, only option for now is 'mp_diffusion'
+            if diff_model == 'mp_diffusion':
+                #kinetics for N17, D0 in cm2/s, Ea in kJ/mol
+                max_D0 = 0.006367
+                max_Ea = 70.74
+            else:
+                return None
+
+            #calculate fractional loss for each segment of the step-heating recipe
+            for i in range(0, np.size(tT_in, 0)):
+            
+                #expand tT path
+                tT_slice = tT_in[i,:]
+
+                max_D = max_D0 * np.exp(-max_Ea / ((tT_slice[i,1] + 273.15) * gas_constant))
+
+                tT = tT_path(tT_slice)
+                diff_tT = tT.step_heat(max_D, r_step)
+        
+        return diff_tT
+        

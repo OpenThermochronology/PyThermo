@@ -1,7 +1,7 @@
 """
 crystal.py
 
-Class crystal and mineral system specific sub-classes. Contains methods primarly focused on solving the diffusion equation, with production and alpha ejection, using a Crank-Nicolson approach
+Class crystal and mineral system specific sub-classes. Contains methods primarly focused on solving the diffusion equation, with production and alpha ejection, using a Crank-Nicolson approach.
 
 """
 from .constants import (
@@ -389,11 +389,21 @@ class crystal:
         He_profile = [u[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
         return He_profile
     
-    def MP_diffusion(
-            self, nodes, r_step, tT_path, diff_parameters, tolerance, aej_U238, aej_U235, aej_Th, aej_Sm
+    def mp_diffusion(
+            self, 
+            nodes, 
+            r_step, 
+            tT_path, 
+            diff_parameters, 
+            tolerance, 
+            aej_U238, 
+            aej_U235, 
+            aej_Th, 
+            aej_Sm, 
+            init_He=None
             ):
         """ 
-        Solves for diffusion in a crystal with multiple diffusion pathways, a fast path and a volume path, using a Crank-Nicoloson scheme. Based on the set-up of Lee and Aldama (1992) (https://doi.org/10.1016/0098-3004(92)90093-7), crucial their algorithm for solving equations 18a and 18b. Uses equatios from Ketcham (2005) (https://doi.org/10.2138/rmg.2005.58.11), specifically equation 21 for tridiagonal setup, and equations 22 and 26 for boundary conditions (which are Neumann and Dirichlet-type in both publications)
+        Solves for diffusion in a crystal with multiple diffusion pathways, a fast path and a volume path, using a Crank-Nicoloson scheme. Based on the set-up of Lee and Aldama (1992) (https://doi.org/10.1016/0098-3004(92)90093-7) and their algorithm for solving equations 18a and 18b. Uses equatios from Ketcham (2005) (https://doi.org/10.2138/rmg.2005.58.11), specifically equation 21 for tridiagonal setup, and equations 22 and 26 for boundary conditions (which are Neumann and Dirichlet-type in both publications).
 
         Parameters
         ----------
@@ -408,7 +418,7 @@ class crystal:
             Time temperature history along which to calculate diffusion
 
         diff_parameters: dictionary of floats
-            Fitted parameters for multi-path diffusion
+            Fitted parameters for multi-path diffusion. Diffusivities must have units of microns^2/s
 
         tolerance: float
             Convergence criterion for iterations diffusion algorithm
@@ -424,6 +434,9 @@ class crystal:
         
         aej_Sm: 1D array or list
             Alpha ejected 1D profile for 147Sm (in atoms/g), must be length of nodes
+        
+        init_He: optional 1D array
+            Non-alpha ejected 1D profile of alphas (in atoms/g), must be length of nodes. Default is None.
 
 
         Returns
@@ -439,21 +452,12 @@ class crystal:
             The 1D radial profile of diffused He in the lattice
 
         """
-        #unpack diff_parameters
+        #unpack diff_parameters, D values have to be in units of micrometer**2/s
         D_sc = diff_parameters['D_sc']
         D_v = diff_parameters['D_v']
         kappa_1 = diff_parameters['kappa_1']
         kappa_2 = diff_parameters['kappa_2']
         f = diff_parameters['f']
-
-        #set up arrays for tridiagonal matrix
-        #u = vr, v is the He profile, r is radius
-        #u_fp is the fast path, and u_lat is the lattice coordinate transform vector
-        #u_fp_n and u_lat_n are previous time step vectors 
-        u_fp = np.zeros(nodes)
-        u_lat = np.zeros(nodes)
-        u_fp_n = np.zeros(nodes)
-        u_lat_n = np.zeros(nodes)
 
         #lambda function for alpha production calculation
         decay = lambda rad_pos, t_1, t_2: (
@@ -469,6 +473,21 @@ class crystal:
                 + aej_Sm[rad_pos]
                 * (np.exp(lambda_147 * t_1) - np.exp(lambda_147 * t_2))
             )
+
+        #set up arrays for tridiagonal matrix
+        #u = vr, v is the He profile, r is radius
+        #u_fp is the fast path, and u_lat is the lattice coordinate transform vector
+        #u_fp_n and u_lat_n are previous time step vectors 
+        u_fp = np.zeros(nodes)
+        u_lat = np.zeros(nodes)
+
+        if init_He is not None:
+            init_He = np.array([init_He[i] * (i + 0.5) * r_step for i in range(0, nodes)])
+            u_fp_n = init_He * f
+            u_lat_n = init_He * (1 - f)
+        else:
+            u_fp_n = np.zeros(nodes)
+            u_lat_n = np.zeros(nodes)
 
         #setup diagonal and d (RHS vector, Ax = d)     
         diagonal = np.zeros(nodes)
@@ -489,6 +508,8 @@ class crystal:
             beta_sc = (2.0 * r_step**2) / (D_sc[i] * dt)
             beta_v = (2.0 * r_step**2) / (D_v[i] * dt)
 
+            print(beta_sc)
+        
             #generate RHS vector for fast path concentration 
             #Neumann inner BC (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
             #production term for 1st node
@@ -496,8 +517,9 @@ class crystal:
             production = alphas * f * 0.5 * r_step * beta_sc
             partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[0]
 
-            diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-            d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition
+            diagonal[0] = -3.0 - beta_sc #- beta_sc * 0.5 * dt * kappa_1
+            d[0] = (3.0 - beta_sc) * u_fp_n[0] - u_fp_n[1] #- production + partition
+            #d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition
 
             #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
             #production term for last node
@@ -505,23 +527,25 @@ class crystal:
             production = alphas * f * (nodes - 0.5) * r_step * beta_sc
             partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
 
-            diagonal[-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-            d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition
+            diagonal[-1] = -2.0 - beta_sc #- beta_sc * 0.5 * dt * kappa_1
+            d[-1] = (2.0 - beta_sc) * u_fp_n[-1] - u_fp_n[-2] #- production + partition
+            #d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition
 
             #fill in the rest
-            diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+            diagonal[1:nodes-1] = -2.0 - beta_sc #- beta_sc * 0.5 * dt * kappa_1
             for j in range(1, nodes - 1):
                 #production term 
                 alphas = decay(j, t_old, t_young)
                 production = alphas * f * (j + 0.5) * r_step * beta_sc
                 partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[j]
                 
-                d[j] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[j] - u_fp_n[j+1] - u_fp_n[j-1] - production + partition
+                d[j] = (2.0 - beta_sc) * u_fp_n[j] - u_fp_n[j+1] - u_fp_n[j-1] #- production + partition
+                #d[j] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[j] - u_fp_n[j+1] - u_fp_n[j-1] - production + partition
 
-                #solve for fast path concentration using scipy banded solver
-                A = [c, diagonal, a]
-                u_fp = solve_banded((1, 1), A, d)
-             
+            #solve for fast path concentration using scipy banded solver
+            A = [c, diagonal, a]
+            u_fp = solve_banded((1, 1), A, d)
+            ''' 
             #iterate within each time segment for distribution between fast path and lattice
             diff_max = 1.0
             counter = 0
@@ -601,16 +625,16 @@ class crystal:
                 omega_max = np.max(np.abs(u_lat - u_lat_old))
                 diff_max = max(xi_max, omega_max)
                 counter = counter + 1
-            
+            '''
             #update u_n vectors and move to the next time step
             u_fp_n = u_fp
             u_lat_n = u_lat  
         
         #convert each u profile to a He concentration profile
-        fast_He_profile = [u_fp[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
-        lat_He_profile = [u_lat[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
-        bulk_He_profile = [(u_fp[i] + u_lat[i])/ ((i + 0.5) * r_step) for i in range(0, nodes)]
-
+        fast_He_profile = [u_fp_n[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
+        lat_He_profile = [u_lat_n[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
+        bulk_He_profile = [(u_fp_n[i] + u_lat_n[i])/ ((i + 0.5) * r_step) for i in range(0, nodes)]
+        
         return bulk_He_profile, fast_He_profile, lat_He_profile
 
     def He_date(self, total_He, corr_factors):
@@ -1113,7 +1137,6 @@ class zircon(crystal):
 
         return diff_list
             
-
     def guenthner_date(self):
         """
         Zircon (U-Th)/He date calculator. First, calculates the diffusivity at each time step of class variable relevant_tT using the parameterization of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally, the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
@@ -1180,6 +1203,9 @@ class zircon(crystal):
         date = self.He_date(total_He, corr_factors)
         
         return date
+    
+    def mp_date(self):
+        pass
 
 class apatite(crystal):
     def __init__(

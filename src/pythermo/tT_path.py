@@ -105,6 +105,35 @@ class tT_path:
         tT_out = np.array([time_array, temp_out])
 
         return tT_out.transpose()
+    
+    def step_heat(self, max_D, r_step):
+        '''
+        Extends time steps in a step-heating recipe in order to minimize oscilliations in the Crank-Nicolson scheme. The key criterion is to keep the fourier number (D*del_t/del_x^2) to under 0.5.
+
+        Parameters
+        ----------
+
+        max_D: float
+            The maximum diffusion coefficient at a given t-T step for a given diffusion model. In units of cm2/s
+
+        r_step: float
+            Grid or mesh spacing in cm, reflects 1st node position as 0.5 * r_step from grain center.
+
+        Returns
+        -------
+
+        tT_expand: 2D array
+            Expanded array of t-T steps.
+        
+        '''
+        dt = self.__tTin[0,0]
+        fourier = max_D * dt / r_step**2
+
+        while fourier > 0.5:
+            pass
+
+        tT_extend = []
+        return tT_extend
 
     def anneal(self, kinetics):
         """
