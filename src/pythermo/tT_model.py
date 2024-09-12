@@ -522,7 +522,7 @@ class tT_model:
             diff_model = grains.iloc[i, 7]
             anneal_model = grains.iloc[i, 8]
 
-            if grains.iloc[i, 1] == 'apatite':
+            if grains.iloc[i, 0] == 'apatite':
                 model_grain = apatite(
                                 size, 
                                 log2_nodes, 
@@ -534,7 +534,7 @@ class tT_model:
                                 )
                 # in cm
                 r_step = model_grain.get_r_step() * 1 / 10000
-            elif grains.iloc[i, 1] == 'zircon':
+            elif grains.iloc[i, 0] == 'zircon':
                 model_grain = zircon(
                                 size, 
                                 log2_nodes, 
@@ -558,15 +558,11 @@ class tT_model:
                 return None
 
             #calculate fractional loss for each segment of the step-heating recipe
-            for i in range(0, np.size(tT_in, 0)):
-            
-                #expand tT path
-                tT_slice = tT_in[i,:]
+            for i in range(np.size(tT_in, 0)):              
+                
+                #create a 2 row time-step array for each segment of the step-heating recipe
 
-                max_D = max_D0 * np.exp(-max_Ea / ((tT_slice[i,1] + 273.15) * gas_constant))
-
-                tT = tT_path(tT_slice)
-                diff_tT = tT.step_heat(max_D, r_step)
-        
+                diff_tT = 1
+                
         return diff_tT
         
