@@ -482,8 +482,6 @@ class crystal:
         #u = vr, v is the He profile, r is radius
         #u_fp is the fast path, and u_lat is the lattice coordinate transform vector
         #u_fp_n and u_lat_n are previous time step vectors 
-        u_fp = np.zeros(nodes)
-        u_lat = np.zeros(nodes)
 
         if init_He is not None:
             init_He = np.array([init_He[i] * (i + 0.5) * r_step for i in range(0, nodes)])
@@ -513,83 +511,83 @@ class crystal:
         for i in range(np.size(tT_path, 0) - 1):
             
             dt_int = tT_path[i, 0] - tT_path[i + 1, 0]
-            fourier_sc = (D_sc[i] * dt_int)/r_step**2
+            fourier_sc = (D_sc[i] * dt_int) / r_step**2
 
             #subdivide the time step if necessary
             if fourier_sc > 0.5:
-                temp = (tT_path[i, 1] + tT_path[i + 1, 1])/2
+                temp = (tT_path[i, 1] + tT_path[i + 1, 1]) / 2
                 M = 100
                 initial_damp = 20
                 sub_tT_path = self.divide_tT(D_sc[i], dt_int, temp, r_step, M, initial_damp)
             else:
-                sub_tT_path = tT_path[i:i+1,:]
+                sub_tT_path = tT_path[i:i + 1, :]
 
-            
             #perform diffusion at sub-interval time spacing
             for j in range(np.size(sub_tT_path, 0) - 1):
                 t_old = sub_tT_path[j, 0]
                 t_young = sub_tT_path[j + 1, 0]
                 dt = t_old - t_young 
-                
                 beta_sc = (2.0 * r_step**2) / (D_sc[i] * dt)
                 beta_v = (2.0 * r_step**2) / (D_v[i] * dt)
-                
-                #generate RHS vector for fast path concentration 
+
+                #initial guess at each sub-interval of u_lat (use previous time step)
+                u_lat = u_lat_n
+
+                #generate RHS vector for fast path concentration from initial u_lat guess
                 #Neumann inner BC (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
                 #production term for 1st node
                 alphas = decay(0, t_old, t_young)
                 production = alphas * f * 0.5 * r_step * beta_sc * allow
                 partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[0]
+                partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
 
-                diagonal[0] = -3.0 - beta_sc 
-                #diagonal[0] = -3.0 - beta_sc * 0.5 * dt * kappa_1
-                d[0] = (3.0 - beta_sc) * u_fp_n[0] - u_fp_n[1] - production + partition
-                #d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition
-
+                diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition + partition_n_plus
+                
                 #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
                 #production term for last node
                 alphas = decay(-1, t_old, t_young)
                 production = alphas * f * (nodes - 0.5) * r_step * beta_sc * allow
                 partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
-
-                diagonal[-1] = -2.0 - beta_sc 
-                #diagonal[-1]= -2.0 - beta_sc * 0.5 * dt * kappa_1
-                d[-1] = (2.0 - beta_sc) * u_fp_n[-1] - u_fp_n[-2] - production + partition
-                #d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition
+                partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
+ 
+                diagonal[-1]= -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition + partition_n_plus
                 
                 #fill in the rest
-                diagonal[1:nodes-1] = -2.0 - beta_sc #- beta_sc * 0.5 * dt * kappa_1
+                diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
                 for k in range(1, nodes - 1):
                     #production term 
                     alphas = decay(k, t_old, t_young)
                     production = alphas * f * (k + 0.5) * r_step * beta_sc * allow
                     partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[k]
+                    partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[k]
                     
-                    d[k] = (2.0 - beta_sc) * u_fp_n[k] - u_fp_n[k+1] - u_fp_n[k-1] - production + partition
-                    #d[k] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[k] - u_fp_n[k+1] - u_fp_n[k-1] - production + partition
-
+                    d[k] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[k] - u_fp_n[k+1] - u_fp_n[k-1] - production + partition + partition_n_plus
+                
                 #solve for fast path concentration using scipy banded solver
                 A = [c, diagonal, a]
                 u_fp = solve_banded((1, 1), A, d)
-                '''
+                
                 #iterate within each time segment for distribution between fast path and lattice
                 diff_max = 1.0
                 counter = 0
-                while diff_max > tolerance or counter <= 50:
+                
+                while diff_max > tolerance and counter < 50:
 
                     #for comparison with updated values in diff_max
                     u_fp_old = u_fp
                     u_lat_old = u_lat
-                                        
+                                     
                     #generate RHS vector for lattice concentration from fast path solution
                     #Neumann inner BC
                     alphas = decay(0, t_old, t_young)
                     production = alphas * (1 - f) * 0.5 * r_step * beta_v * allow
                     partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[0]
-                    partiton_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[0]
-
+                    partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[0]
+                    
                     diagonal[0] = -3.0 - beta_v + beta_v * 0.5 * dt * kappa_2
-                    d[0] = (3.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[0] - u_lat_n[1] - production - partition - partiton_n_plus
+                    d[0] = (3.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[0] - u_lat_n[1] - production - partition - partition_n_plus
 
                     #Dirichlet outer BC
                     alphas = decay(-1, t_old, t_young)
@@ -599,7 +597,7 @@ class crystal:
 
                     diagonal[-1] = -2.0 - beta_v + beta_v * 0.5 * dt * kappa_2
                     d[-1] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[-1] - u_lat_n[-2] - production - partition - partition_n_plus
-
+                    
                     #fill in the rest
                     diagonal[1:nodes-1] = -2.0 - beta_v + beta_v * 0.5 * dt * kappa_2
                     for k in range(1, nodes - 1):
@@ -607,12 +605,13 @@ class crystal:
                         production = alphas * (1 - f) * (k + 0.5) * r_step * beta_v * allow
                         partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[k]
                         partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[k]
-                        d[j] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[k] - u_lat_n[k+1] - u_lat_n[k-1] -  production - partition - partition_n_plus
+                        d[k] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[k] - u_lat_n[k+1] - u_lat_n[k-1] - production - partition - partition_n_plus
+                        
 
                     #solve for lattice concentration using scipy banded solver
                     A = [c, diagonal, a]
                     u_lat = solve_banded((1, 1), A, d)
-
+                    
                     #generate RHS vector again for fast path concentration from lattice solution
                     #Neumann inner BC
                     alphas = decay(0, t_old, t_young)
@@ -622,14 +621,14 @@ class crystal:
 
                     diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
                     d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition + partition_n_plus
-
+                    
                     #Dirichlet outer BC
                     alphas = decay(-1, t_old, t_young)
                     production = alphas * f * (nodes - 0.5) * r_step * beta_sc * allow
                     partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
                     partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
 
-                    diagonal[-1] = (-2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1)
+                    diagonal[-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
                     d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition + partition_n_plus
 
                     #fill in the rest
@@ -640,18 +639,18 @@ class crystal:
                         partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[k]
                         partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[k]
 
-                        d[j] = (-2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[k] - u_fp_n[k+1] - u_fp_n[k-1] - production + partition + partition_n_plus
+                        d[k] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[k] - u_fp_n[k+1] - u_fp_n[k-1] - production + partition + partition_n_plus
 
                     #solve for fast path concentration once more using scipy banded solver
                     A = [c, diagonal, a]
                     u_fp = solve_banded((1, 1), A, d)
-
+                    
                     #determine diff_max to compare for next iteration of while loop
                     xi_max = np.max(np.abs(u_fp - u_fp_old))
                     omega_max = np.max(np.abs(u_lat - u_lat_old))
                     diff_max = max(xi_max, omega_max)
                     counter = counter + 1
-                '''
+                
                 #update u_n vectors and move to the next sub-interval time step
                 u_fp_n = u_fp
                 u_lat_n = u_lat  
