@@ -8,7 +8,16 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as mplcm
 import matplotlib.colors as colors
 from cycler import cycler
-from .constants import np, gas_constant
+from scipy.integrate import romb
+from .constants import (
+    np, 
+    gas_constant, 
+    lambda_238, 
+    lambda_235, 
+    lambda_232, 
+    lambda_147, 
+    sec_per_myr,
+)
 from .crystal import apatite, zircon
 from .tT_path import tT_path
 
@@ -490,32 +499,40 @@ class tT_model:
         dateeU_fig.tight_layout()
         return dateeU_fig
     
-    def arrhenius(self, log2_nodes=8):
+    def arrhenius(self, diff_params, tolerance, eject='True', log2_nodes=13):
         '''
-        Creates and plots a model Arrhenius curve from a step-heating recipe. Model results can be compared to measured data.
+        Creates data points for a model Arrhenius curve from a step-heating recipe. Model results can be compared to measured data.
 
         Parameters
         ----------
+        diff_parameters: dictionary of floats
+            Fitted parameters for multi-path diffusion. Diffusivities must have units of microns^2/s
+
+        tolerance: float
+            Convergence criterion for iterative diffusion algorithm
+
+        eject: optional boolean
+            Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
         
         log2_nodes: optional int
-            The number of nodes (2**log2_nodes + 1) used in the Crank-Nicolson scheme. Default is 8 (256 nodes + 1).
+            The number of nodes (2**log2_nodes + 1) used in the finite difference scheme. Default is 13 (8192 nodes + 1).
             
         Returns
         -------
 
-        arrhenius_plot: figure object
-            An Arrhenius plot that can be saved and customized.        
+        arrhenius_data: array of 2D lists
+            An array of x (10000/T in K) and y (ln(D/a2) in 1/s) data points for each grain input. Used to create Arrhenius plots.        
         
-            
-        Columns consist of: mineral type (1st column), dates (2nd column), 2 sigma date error (3rd column), grain size (4th column), U concentration (5th column), Th concentration (6th column), Sm concentration (7th column), damage-diffusivity model (8th column), annealing model (9th column)
         '''
         tT_in = self.__tT_in
         grains = self.__grain_in
 
+        arrhenius_data = []
+
         for i in range(len(grains.index)):
-            # unpack data frame 
+            # unpack data frame, size in microns, age in Ma 
             dose_age = grains.iloc[i, 1]
-            size  = grains.iloc[i, 3] * 1 / 10000
+            size  = grains.iloc[i, 3] 
             U_ppm = grains.iloc[i, 4]
             Th_ppm = grains.iloc[i, 5]
             Sm_ppm = grains.iloc[i, 6]
@@ -523,17 +540,7 @@ class tT_model:
             anneal_model = grains.iloc[i, 8]
 
             if grains.iloc[i, 0] == 'apatite':
-                model_grain = apatite(
-                                size, 
-                                log2_nodes, 
-                                tT_in, 
-                                anneal_model, 
-                                U_ppm, 
-                                Th_ppm, 
-                                Sm_ppm,
-                                )
-                # in cm
-                r_step = model_grain.get_r_step() * 1 / 10000
+                return None    
             elif grains.iloc[i, 0] == 'zircon':
                 model_grain = zircon(
                                 size, 
@@ -544,25 +551,120 @@ class tT_model:
                                 Th_ppm, 
                                 Sm_ppm,
                                 )
-                # in cm
-                r_step = model_grain.get_r_step() * 1 / 10000
             else:
                 return None
+            
+            #create the initial profiles
+            #create production lists that consider (or don't) alpha ejection
+            if eject:
+                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.zircon_alpha_ejection()
+            else:
+                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.zircon_no_ejection()
+            
+            init_age = dose_age * sec_per_myr
 
+            init_He = np.array([
+                8
+                * aej_U238[i]
+                * (np.exp(lambda_238 * init_age) - 1) 
+                + 7
+                * aej_U235[i]
+                * (np.exp(lambda_235 * init_age) - 1) 
+                + 6
+                * aej_Th[i]
+                * (np.exp(lambda_232 * init_age) - 1) 
+                + aej_Sm[i]
+                * (np.exp(lambda_147 * init_age) - 1)
+                for i in range(model_grain.get_nodes())   
+            ])
+
+            init_fast_He = diff_params['f'] * init_He
+            init_lat_He = (1 - diff_params['f']) * init_He
+
+            #calculate the total amount of initial He, accounting for alpha ejected profiles
+            #convert He profile into a spherical function for integration
+            integral = [
+                init_He[i] * 4 * np.pi * ((0.5 + i) * model_grain.get_r_step()) ** 2 
+                for i in range(model_grain.get_nodes())
+            ]
+
+            total_init_He = romb(integral, model_grain.get_r_step())
+
+            #units in atoms per volume (base of 1/(4/3 * Pi))
+            total_init_He = total_init_He / ((4 / 3) * np.pi)
+
+            frac_loss_pre = 0
+        
             #set diffusion model, only option for now is 'mp_diffusion'
             if diff_model == 'mp_diffusion':
-                #kinetics for N17, D0 in cm2/s, Ea in kJ/mol
-                max_D0 = 0.006367
-                max_Ea = 70.74
+
+                D_a2_array = np.zeros((np.size(tT_in, 0), 2))
+                
+                #calculate fractional loss for each segment of the step-heating recipe
+                for j in range(np.size(tT_in, 0)):             
+                    
+                    time = tT_in[j, 0]
+                    temp = tT_in[j, 1]
+
+                    #create a 2 row time-step array for each segment of the step-heating recipe
+                    diff_tT = np.array(
+                        [[time, temp + 273.15], [0, temp + 273.15]]
+                        )
+
+                    #create a grain that will undergo diffusion within each step-heating segment
+                    diffuse_grain = zircon(
+                                size, 
+                                log2_nodes, 
+                                diff_tT, 
+                                anneal_model, 
+                                U_ppm, 
+                                Th_ppm, 
+                                Sm_ppm,
+                                ) 
+                    
+                    #perform multi-path diffusion and get the various diffusion profiles
+                    bulk_He, fast_He, lat_He, total_He = diffuse_grain.mp_profile(
+                        diff_params, 
+                        tolerance,
+                        init_fast_He,
+                        init_lat_He,
+                        eject=False,  
+                        produce=False,
+                        )
+
+                    #calculate D/a2 from fractional loss
+                    frac_loss =  1 - total_He/total_init_He
+                    if frac_loss < 0.85:
+                        D_a2 = (
+                            (1 / (np.pi**2 * time)) * 
+                                (
+                                    (-np.pi**2 / 3) * (frac_loss - frac_loss_pre) - 
+                                    2 * np.pi * 
+                                    (
+                                        np.sqrt(1 - np.pi * frac_loss / 3) - 
+                                        np.sqrt(1 - np.pi * frac_loss_pre / 3)
+                                     )
+                                )
+                        )
+                    else:
+                        D_a2 = (
+                            -1 / (np.pi**2 * time) 
+                            * np.log((1 - frac_loss) / (1 - frac_loss_pre))
+                        )
+                    
+                    #save ln(D/a2) value to arrhenius list for this grain
+                    D_a2_array[j, 0] = 1e4/(temp + 273.15) 
+                    D_a2_array[j, 1] = np.log(D_a2)
+
+                    #update diffusion profiles and fracitional loss for next step-heating segment
+                    init_fast_He = fast_He
+                    init_lat_He = lat_He
+                    frac_loss_pre = frac_loss
             else:
                 return None
+            
+            #save arrhenius list for this grain to array of lists for all grains
+            arrhenius_data.append(D_a2_array)
 
-            #calculate fractional loss for each segment of the step-heating recipe
-            for i in range(np.size(tT_in, 0)):              
-                
-                #create a 2 row time-step array for each segment of the step-heating recipe
-
-                diff_tT = 1
-                
-        return diff_tT
+        return arrhenius_data
         

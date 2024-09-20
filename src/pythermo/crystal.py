@@ -76,7 +76,8 @@ class crystal:
         Th_atom = Th_ppm * Th_ppm_atom
         Sm_atom = Sm_ppm * Sm_ppm_atom
 
-        #alpha stopping distances as reported in Ketcham et al. (2011) (https://doi.org/10.1016/j.gca.2011.10.011)   
+        #alpha stopping distances as reported in Ketcham et al. (2011) (https://doi.org/10.1016/j.gca.2011.10.011)
+        #option for no alpha ejection   
         if(mineral_type == 'apatite'):         
             as_U238 = 18.81
             as_U235 = 21.80
@@ -87,6 +88,11 @@ class crystal:
             as_U235 = 18.05
             as_Th = 18.43
             as_Sm = 4.76
+        elif(mineral_type == 'none'):
+            as_U238 = 0
+            as_U235 = 0
+            as_Th = 0
+            as_Sm = 0
 
         #alpha ejection profile lists for each isotope
         aej_U238 = [
@@ -400,7 +406,8 @@ class crystal:
             aej_U235, 
             aej_Th, 
             aej_Sm, 
-            init_He=None,
+            init_fast_He=None,
+            init_lat_He=None,
             produce=True
             ):
         """ 
@@ -422,7 +429,7 @@ class crystal:
             Fitted parameters for multi-path diffusion. Diffusivities must have units of microns^2/s
 
         tolerance: float
-            Convergence criterion for iterations diffusion algorithm
+            Convergence criterion for iterative diffusion algorithm
 
         aej_U238: 1D array or list
             Alpha ejected 1D profile for 238U (in atoms/g), must be length of nodes
@@ -436,8 +443,11 @@ class crystal:
         aej_Sm: 1D array or list
             Alpha ejected 1D profile for 147Sm (in atoms/g), must be length of nodes
         
-        init_He: optional 1D array
-            Non-alpha ejected 1D profile of alphas (in atoms/g), must be length of nodes. Default is None.
+        init_fast_He: optional 1D array
+            1D profile of alphas for fast path, must be length of nodes. Default is None. Must be in terms of radial position (see mp_profile function).
+        
+        init_lat_He: optional 1D array
+            1D profile of alphas for lattice, must be length of nodes. Default is None. Must be in terms of radial position (see mp_profile function). 
         
         produce: optional boolean
             Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True'.
@@ -447,7 +457,7 @@ class crystal:
         -------
 
         bulk_He_profile: list of floats
-            The 1D radial profile of diffused He
+            The 1D radial profile of diffused He in the bulk grain
         
         fast_He_profile: list of floats
             The 1D radial profile of diffused He in the fast pathways
@@ -483,10 +493,9 @@ class crystal:
         #u_fp is the fast path, and u_lat is the lattice coordinate transform vector
         #u_fp_n and u_lat_n are previous time step vectors 
 
-        if init_He is not None:
-            init_He = np.array([init_He[i] * (i + 0.5) * r_step for i in range(0, nodes)])
-            u_fp_n = init_He * f
-            u_lat_n = init_He * (1 - f)
+        if init_fast_He is not None and init_lat_He is not None:
+            u_fp_n = init_fast_He
+            u_lat_n = init_lat_He
         else:
             u_fp_n = np.zeros(nodes)
             u_lat_n = np.zeros(nodes)
@@ -1009,7 +1018,7 @@ class zircon(crystal):
         ----------
 
         radius: float
-            Radius of a sphere with equivalnet surfacea area to volume ratio as grain (in micrometers)
+            Radius of a sphere with equivalent surfacea area to volume ratio as grain (in micrometers)
 
         log2_nodes: int
             Number of nodes for 1D finite difference diffusion solver is equivalent to 2^log2_nodes + 1 (necessary for Romberg integration)
@@ -1078,6 +1087,17 @@ class zircon(crystal):
             self.__Th_ppm,
             self.__Sm_ppm,
             'zircon',
+        )
+    
+    def zircon_no_ejection(self):
+        return self.alpha_ejection(
+            self.__radius,
+            self.__nodes,
+            self.__r_step,
+            self.__U_ppm,
+            self.__Th_ppm,
+            self.__Sm_ppm,
+            'none',
         )
         
     def guenthner_damage(self):
@@ -1300,8 +1320,113 @@ class zircon(crystal):
         
         return date
     
-    def mp_date(self):
+    def mp_parameters(self):
         pass
+    
+    def mp_profile(
+            self, 
+            diff_parameters, 
+            tolerance, 
+            init_fast_He=None, 
+            init_lat_He=None, 
+            eject=True, 
+            produce=True,
+            ):
+        """
+        Returns the 1D, spherical diffusion profiles for lattice, fast path, and the bulk grain using the multi-path diffusion function. Used for Arrhenius plotting.
+
+        Parameters
+        ----------
+        diff_parameters: dictionary of floats
+            Fitted parameters for multi-path diffusion. Diffusivities must have units of microns^2/s
+
+        tolerance: float
+            Convergence criterion for iterative diffusion algorithm
+
+        init_fast_He: optional 1D array
+            1D profile of alphas (in atoms/g) for fast path, must be length of nodes. Default is None.
+        
+        init_lat_He: optional 1D array
+            1D profile of alphas (in atoms/g) for lattice, must be length of nodes. Default is None.
+        
+        eject: optional boolean
+            Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
+        
+        produce: optional boolean
+            Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True', meaning production will occur.
+
+        
+        Returns
+        ----------
+        bulk_He_profile: list of floats
+            The 1D radial profile of diffused He in the bulk grain
+        
+        fast_He_profile: list of floats
+            The 1D radial profile of diffused He in the fast pathways
+
+        lat_He_profile: list of floats
+            The 1D radial profile of diffused He in the lattice
+
+        total_He: float
+            The total amount of helium present in atoms per spherical volume (base of 1/(4/3 * Pi))
+ 
+        
+        """
+
+        #create production lists that consider (or don't) alpha ejection
+        if eject:
+            aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_alpha_ejection()
+        else:
+            aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_no_ejection()
+
+        #convert 1D profiles to radial position profiles
+        #reflects 1st node position as 0.5 * r_step from grain center
+        init_fast_He = np.array([
+            init_fast_He[i] * (i + 0.5) * self.__r_step for i in range(0, self.__nodes)
+            ])
+        
+        init_lat_He = np.array([
+            init_lat_He[i] * (i + 0.5) * self.__r_step for i in range(0, self.__nodes)
+            ])
+
+        bulk_He, fast_He, lat_He = self.mp_diffusion(
+            self.__nodes, 
+            self.__r_step, 
+            self.__relevant_tT, 
+            diff_parameters, 
+            tolerance, 
+            aej_U238, 
+            aej_U235, 
+            aej_Th, 
+            aej_Sm, 
+            init_fast_He,
+            init_lat_He,
+            produce,
+        )
+
+        #use Romberg integration to calculate total amount of He
+        #check for zero helium concentration
+        minimum_He = bulk_He[0] * 0.5 * self.__r_step
+        for i in range(self.__nodes):
+            if bulk_He[i] < minimum_He:
+                minimum_He = bulk_He[i]
+        
+        if minimum_He < -bulk_He[0] * 0.5:
+            total_He = 0
+            return total_He
+
+        #convert He profile into a spherical function for integration
+        integral = [
+            bulk_He[i] * 4 * np.pi * ((0.5 + i) * self.__r_step) ** 2 
+            for i in range(self.__nodes)
+        ]
+
+        total_He = romb(integral, self.__r_step)
+
+        #units in atoms per volume (base of 1/(4/3 * Pi))
+        total_He = total_He / ((4 / 3) * np.pi)
+
+        return bulk_He, fast_He, lat_He, total_He
 
 class apatite(crystal):
     def __init__(
@@ -1383,6 +1508,17 @@ class apatite(crystal):
             self.__Th_ppm,
             self.__Sm_ppm,
             'apatite',
+        )
+    
+    def apatite_no_ejection(self):
+        return self.alpha_ejection(
+            self.__radius,
+            self.__nodes,
+            self.__r_step,
+            self.__U_ppm,
+            self.__Th_ppm,
+            self.__Sm_ppm,
+            'none',
         )
         
     def flowers_damage(self):
