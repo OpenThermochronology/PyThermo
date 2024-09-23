@@ -520,14 +520,18 @@ class tT_model:
         Returns
         -------
 
-        arrhenius_data: array of 2D lists
-            An array of x (10000/T in K) and y (ln(D/a2) in 1/s) data points for each grain input. Used to create Arrhenius plots.        
+        arrhenius_data: list of 3 column arrays 
+            A list of 3 column arrays of 10000/T (in K), ln(D/a2) (in 1/s), and fractional loss data points for each grain input.
+
+        profile_data: list of 3 columns arrays
+            A list of 3 column arrays of bulk He, fast path He, and lattice He concentration profile (in atoms per volume, base of 1/(4/3 * Pi)) for each grain input       
         
         '''
         tT_in = self.__tT_in
         grains = self.__grain_in
 
         arrhenius_data = []
+        profile_data = []
 
         for i in range(len(grains.index)):
             # unpack data frame, size in microns, age in Ma 
@@ -598,7 +602,8 @@ class tT_model:
             #set diffusion model, only option for now is 'mp_diffusion'
             if diff_model == 'mp_diffusion':
 
-                D_a2_array = np.zeros((np.size(tT_in, 0), 2))
+                D_a2_array = np.zeros((np.size(tT_in, 0), 3))
+                profiles = np.zeros((model_grain.get_nodes(), 3))
                 
                 #calculate fractional loss for each segment of the step-heating recipe
                 for j in range(np.size(tT_in, 0)):             
@@ -655,6 +660,7 @@ class tT_model:
                     #save ln(D/a2) value to arrhenius list for this grain
                     D_a2_array[j, 0] = 1e4/(temp + 273.15) 
                     D_a2_array[j, 1] = np.log(D_a2)
+                    D_a2_array[j, 2] = frac_loss
 
                     #update diffusion profiles and fracitional loss for next step-heating segment
                     init_fast_He = fast_He
@@ -663,8 +669,13 @@ class tT_model:
             else:
                 return None
             
-            #save arrhenius list for this grain to array of lists for all grains
+            profiles[:, 0] = bulk_He
+            profiles[:, 1] = fast_He
+            profiles[:, 2] = lat_He
+            
+            #save arrhenius and profile list for this grain to array of lists for all grains
             arrhenius_data.append(D_a2_array)
+            profile_data.append(profiles)
 
-        return arrhenius_data
+        return arrhenius_data, profile_data
         
