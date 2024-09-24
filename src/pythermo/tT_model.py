@@ -11,11 +11,14 @@ from cycler import cycler
 from scipy.integrate import romb
 from .constants import (
     np, 
-    gas_constant, 
     lambda_238, 
     lambda_235, 
     lambda_232, 
-    lambda_147, 
+    lambda_147,
+    U238_ppm_atom,
+    U235_ppm_atom,
+    Th_ppm_atom,
+    Sm_ppm_atom, 
     sec_per_myr,
 )
 from .crystal import apatite, zircon
@@ -506,7 +509,7 @@ class tT_model:
         Parameters
         ----------
         diff_parameters: dictionary of floats
-            Fitted parameters for multi-path diffusion. Diffusivities must have units of microns^2/s
+            Exchange coefficients (kappa_1 and kappa_2), and fraction amorphous (f) for multi-path diffusion.
 
         tolerance: float
             Convergence criterion for iterative diffusion algorithm
@@ -554,7 +557,7 @@ class tT_model:
                                 U_ppm, 
                                 Th_ppm, 
                                 Sm_ppm,
-                                )
+                            )
             else:
                 return None
             
@@ -567,20 +570,22 @@ class tT_model:
             
             init_age = dose_age * sec_per_myr
 
-            init_He = np.array([
-                8
-                * aej_U238[i]
-                * (np.exp(lambda_238 * init_age) - 1) 
-                + 7
-                * aej_U235[i]
-                * (np.exp(lambda_235 * init_age) - 1) 
-                + 6
-                * aej_Th[i]
-                * (np.exp(lambda_232 * init_age) - 1) 
-                + aej_Sm[i]
-                * (np.exp(lambda_147 * init_age) - 1)
-                for i in range(model_grain.get_nodes())   
-            ])
+            init_He = np.array(
+                [
+                    8
+                    * aej_U238[i]
+                    * (np.exp(lambda_238 * init_age) - 1) 
+                    + 7
+                    * aej_U235[i]
+                    * (np.exp(lambda_235 * init_age) - 1) 
+                    + 6
+                    * aej_Th[i]
+                    * (np.exp(lambda_232 * init_age) - 1) 
+                    + aej_Sm[i]
+                    * (np.exp(lambda_147 * init_age) - 1)
+                    for i in range(model_grain.get_nodes())   
+                ]
+            )
 
             init_fast_He = diff_params['f'] * init_He
             init_lat_He = (1 - diff_params['f']) * init_He
@@ -614,7 +619,7 @@ class tT_model:
                     #create a 2 row time-step array for each segment of the step-heating recipe
                     diff_tT = np.array(
                         [[time, temp + 273.15], [0, temp + 273.15]]
-                        )
+                    )
 
                     #create a grain that will undergo diffusion within each step-heating segment
                     diffuse_grain = zircon(
@@ -625,7 +630,12 @@ class tT_model:
                                 U_ppm, 
                                 Th_ppm, 
                                 Sm_ppm,
-                                ) 
+                            )
+                    
+                    #determine diffusivities for diffused grain, add to parameters dictionary
+                    fast_diffs, lat_diffs, bulk_diffs = diffuse_grain.mp_diffs([total_init_He])
+                    diff_params['D_sc'] = fast_diffs
+                    diff_params['D_v'] = lat_diffs
                     
                     #perform multi-path diffusion and get the various diffusion profiles
                     bulk_He, fast_He, lat_He, total_He = diffuse_grain.mp_profile(
@@ -635,7 +645,7 @@ class tT_model:
                         init_lat_He,
                         eject=False,  
                         produce=False,
-                        )
+                    )
 
                     #calculate D/a2 from fractional loss
                     frac_loss =  1 - total_He/total_init_He

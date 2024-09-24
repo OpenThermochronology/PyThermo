@@ -426,7 +426,7 @@ class crystal:
             Time temperature history along which to calculate diffusion
 
         diff_parameters: dictionary of floats
-            Fitted parameters for multi-path diffusion. Diffusivities must have units of microns^2/s
+            Fitted parameters for multi-path diffusion. Diffusivities at each time temperature step in tT_path (units of micrometer2/s), must be length of np.size(tT_path,0) - 1.
 
         tolerance: float
             Convergence criterion for iterative diffusion algorithm
@@ -677,6 +677,7 @@ class crystal:
 
         Parameters
         ----------
+        
         D: float
             Diffusivity at a given time-step. In microns^2/s.
 
@@ -817,6 +818,7 @@ class crystal:
 
         Parameters
         ----------
+
         a: 1D array of floats
             Values along the subdiagonal of the tridiagonal matrix
 
@@ -1108,7 +1110,7 @@ class zircon(crystal):
         -------
         
         damage: 1D array of floats
-            Array of total amount of damage at each time step of relevant_tT
+            Array of total amount of damage at each time step of relevant_tT. Length of damage is one less than the number of rows in relevant_tT (because last time step is 0).
         
         """
         U238_atom = self.__U_ppm * U238_ppm_atom
@@ -1156,8 +1158,9 @@ class zircon(crystal):
 
         Parameters
         ----------
+
         damage: 1D array of floats
-            Array of total amount of damage at each time step of relevant_tT
+            Array of total amount of damage at each time step of relevant_tT. Length must be one less than the number of rows in relevant_tT (because last time step is 0).
 
         
         Returns
@@ -1320,8 +1323,97 @@ class zircon(crystal):
         
         return date
     
-    def mp_parameters(self):
-        pass
+    def mp_diffs(self, damage):
+        """
+        Calculates the diffusivity at each time step of class variable relevant_tT using the multi-path parameterization of Guenthner et al. (XXXX)
+
+        Parameters
+        ----------
+
+        damage: 1D array of floats
+            Array of total amount of damage at each time step of relevant_tT. Length of damage must be one less than the number of rows in relevant_tT (because last time step is 0).
+
+            
+        Returns
+        -------
+        
+        fast_diff_array: 1D array of floats
+            Array of the fast path diffusivities as a function of damage at each time step of relevant_tT. Length is one less than the number of rows in relevant_tT (because last time step is 0). Diffusivities are in micrometers**2/s.
+
+        lat_diff_array: 1D array of floats
+            Array of the lattice diffusivities as a funcition of damage at each time step of relevant_tT. Length is one less than the number of rows in relevant_tT (because last time step is 0). Diffusivities are in micrometers**2/s.
+
+        bulk_diff_array: 1D array of floats
+            Array of the bulk diffusivities as a function of damage at each time step of relevant_tT. Length is one less than the number of rows in relevant_tT (because last time step is 0). Diffusivities are in 1/s.
+        
+        """
+        fast_diff_array = np.zeros(len(damage))
+        lat_diff_array = np.zeros(len(damage))
+        bulk_diff_array = np.zeros(len(damage))
+        
+        #radius in micrometers
+        radius = self.__radius
+        
+        #time in seconds, temp in C
+        relevant_tT = self.__relevant_tT
+
+        #mass of amorphous material produced per alpha event (g/alpha)
+        #Palenik et al. 2003
+        B_a = 5.48e-19
+
+        #mean intercept length of zircon with dose of 1e14 alphas/g (nm)
+        l_int_0 = 45920
+
+        #surface area to volume ratio of damage capsule (cm-1)
+        SV = 1.669
+
+        #Guenthner et al. (XXXX) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
+        D0_z = 2.0e-3 * 10**8 
+        D0_N17 = 0.0034 * 10**8
+        Ea_z = 52.0
+        Ea_N17 = 71.0
+        Ea_trap = 160 
+        gamma = 2e-19
+        omega = 0.25
+        kappa_2 = -1e-4
+        k_star = 1e-14
+        n = 10
+
+        for i in range(len(damage)):
+            #average temp between time steps in K
+            temp_K = ((relevant_tT[i, 1] + 273.15) + (relevant_tT[i + 1, 1] + 273.15)) / 2
+
+            #tort parameters
+            f_a_DI = 1 - np.exp(-B_a * damage[i])
+            l_int = (4.2 / (f_a_DI * SV)) - 2.5
+            tau = (l_int_0 / l_int)**2
+            D0_v = D0_z * (1 / tau)
+
+            #trap parameters
+            psi = (gamma * damage[i]**omega * np.exp(Ea_trap/(gas_constant * temp_K))) + 1
+
+            #lattice (volume) diffusivity
+            D_v = D0_v * np.exp(-Ea_z / (gas_constant * temp_K)) / psi
+            lat_diff_array[i] = D_v
+
+            #fast path (short-circuit) diffusivity
+            D_sc = D0_N17 * np.exp(-Ea_N17 / (gas_constant * temp_K))
+            fast_diff_array[i] = D_sc
+            
+            #fraction amorphous
+            f = 1 - ((1 + B_a * damage[i]) * np.exp(-(B_a * damage[i])))**n
+
+            #treat kappa_2 as a constant, solve for kappa_1
+            kappa_1 = -kappa_2 * (1 - f) / (k_star * f)
+
+            #bulk diffusivity
+            D_b_a2 = (
+                (1 / (kappa_1 - kappa_2)) * 
+                (-kappa_2 * D_sc / radius**2 + kappa_1 * D_v / radius**2)
+            )
+            bulk_diff_array[i] = D_b_a2
+        
+        return fast_diff_array, lat_diff_array, bulk_diff_array
     
     def mp_profile(
             self, 
@@ -1337,6 +1429,7 @@ class zircon(crystal):
 
         Parameters
         ----------
+
         diff_parameters: dictionary of floats
             Fitted parameters for multi-path diffusion. Diffusivities must have units of microns^2/s
 
@@ -1590,6 +1683,7 @@ class apatite(crystal):
 
         Parameters
         ----------
+
         damage: 1D array of floats
             Array of total amount of damage at each time step of relevant_tT
 
