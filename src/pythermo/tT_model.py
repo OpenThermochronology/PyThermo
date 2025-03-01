@@ -68,7 +68,7 @@ class tT_model:
     def set_model_data(self, model_data):
         self.__model_data = model_data
 
-    def forward(self, comp_type='size', model_num=1, std_grain=0, log2_nodes=8):
+    def forward(self, comp_type='size', model_num=1, std_grain=0, log2_nodes=8, colormap='default'):
         """ 
         Runs a forward model for each individual tT path entry in class variable tT_in and the grain inputs in class variable grain_in.
 
@@ -85,6 +85,12 @@ class tT_model:
         
         log2_nodes: optional int
             The number of nodes (2**log2_nodes + 1) used in the Crank-Nicolson diffusion solver. Default is 8 (256 nodes + 1).
+        
+        colormap : str or matplotlib Colormap, optional
+            Colormap used for model visualization. The default is a set of 8 colors 
+            (following the xkcd template) and then the plasma colormap for more than 8 models. 
+            Alternatively, the user can provide another matplotlib-supported colormap (e.g., 'viridis').
+            Default is 'default'.
 
         Returns
         -------
@@ -313,11 +319,11 @@ class tT_model:
                     continue
 
         self.set_model_data(model_data)
-        forward_fig = self.date_eU_plot(model_data, num_grains, 'size')
+        forward_fig = self.date_eU_plot(model_data, num_grains, 'size', colormap=colormap)
 
         return forward_fig
 
-    def date_eU_plot(self, model_data, grain_num, comp_type):
+    def date_eU_plot(self, model_data, grain_num, comp_type, colormap='default'):
         """ 
         Plot model date output on a date-eU plot, along with corresponding tT paths, and optional measured datasets.
 
@@ -332,6 +338,12 @@ class tT_model:
         
         comp_type: string
             The type of comparison. Either 'size' for grain size comparisons, or 'model' for different diffusion and/or annealing models.
+        
+        colormap : matplotlib Colormap, optional
+            Colormap used for model visualization. The default is a set of 8 colors 
+            (following the xkcd template) and then the plasma colormap for more than 8 models. 
+            Alternatively, the user can provide another matplotlib-supported colormap (e.g., 'viridis').
+            Default is 'default'.
 
         Returns
         -------
@@ -357,21 +369,29 @@ class tT_model:
         time_max = 0
         temp_max = 0
 
-        #set up color strings, if greater than 8 date-eU/tT sets, switch to plasma gradational color scheme
-        if np.size(model_data, 1) / 3 <= 8:
-            color_options = [
-                'xkcd:black',
-                'xkcd:royal blue',
-                'xkcd:red',
-                'xkcd:sky',
-                'xkcd:lime',
-                'xkcd:dark purple',
-                'xkcd:rose',
-                'xkcd:grey',
-            ]
+        #set up color strings
+        # default is that if greater than 8 date-eU/tT sets, switch to plasma gradational color scheme
+        if colormap == 'default':
+            if np.size(model_data, 1) / 3 <= 8:
+                color_options = [
+                    'xkcd:black',
+                    'xkcd:royal blue',
+                    'xkcd:red',
+                    'xkcd:sky',
+                    'xkcd:lime',
+                    'xkcd:dark purple',
+                    'xkcd:rose',
+                    'xkcd:grey',
+                ]
+            else:
+                num_of_colors = int(np.size(model_data, 1) / 3)
+                color_map = plt.get_cmap('plasma')
+                color_norm = colors.Normalize(vmin=0, vmax=num_of_colors - 1)
+                scalar_map = mplcm.ScalarMappable(norm=color_norm, cmap=color_map)
+                color_options = [scalar_map.to_rgba(i) for i in range(num_of_colors)]
         else:
-            num_of_colors = np.size(model_data, 1) / 3
-            color_map = plt.get_cmap('plasma')
+            num_of_colors = int(np.size(model_data, 1) / 3)
+            color_map = plt.get_cmap(colormap)
             color_norm = colors.Normalize(vmin=0, vmax=num_of_colors - 1)
             scalar_map = mplcm.ScalarMappable(norm=color_norm, cmap=color_map)
             color_options = [scalar_map.to_rgba(i) for i in range(num_of_colors)]
