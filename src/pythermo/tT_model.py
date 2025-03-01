@@ -8,7 +8,19 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as mplcm
 import matplotlib.colors as colors
 from cycler import cycler
-from .constants import np
+from scipy.integrate import romb
+from .constants import (
+    np, 
+    lambda_238, 
+    lambda_235, 
+    lambda_232, 
+    lambda_147,
+    U238_ppm_atom,
+    U235_ppm_atom,
+    Th_ppm_atom,
+    Sm_ppm_atom, 
+    sec_per_myr,
+)
 from .crystal import apatite, zircon
 from .tT_path import tT_path
 
@@ -53,7 +65,7 @@ class tT_model:
     def get_model_data(self):
         return self.__model_data
     
-    def set_model_data(self,model_data):
+    def set_model_data(self, model_data):
         self.__model_data = model_data
 
     def forward(self, comp_type='size', model_num=1, std_grain=0, log2_nodes=8, colormap='default'):
@@ -73,6 +85,12 @@ class tT_model:
         
         log2_nodes: optional int
             The number of nodes (2**log2_nodes + 1) used in the Crank-Nicolson diffusion solver. Default is 8 (256 nodes + 1).
+        
+        colormap : str or matplotlib Colormap, optional
+            Colormap used for model visualization. The default is a set of 8 colors 
+            (following the xkcd template) and then the plasma colormap for more than 8 models. 
+            Alternatively, the user can provide another matplotlib-supported colormap (e.g., 'viridis').
+            Default is 'default'.
 
         colormap : str or matplotlib Colormap, optional
             Colormap used for model visualization. The default is a set of 8 colors 
@@ -326,6 +344,12 @@ class tT_model:
         
         comp_type: string
             The type of comparison. Either 'size' for grain size comparisons, or 'model' for different diffusion and/or annealing models.
+        
+        colormap : matplotlib Colormap, optional
+            Colormap used for model visualization. The default is a set of 8 colors 
+            (following the xkcd template) and then the plasma colormap for more than 8 models. 
+            Alternatively, the user can provide another matplotlib-supported colormap (e.g., 'viridis').
+            Default is 'default'.
 
         colormap : matplotlib Colormap, optional
             Colormap used for model visualization. The default is a set of 8 colors 
@@ -509,3 +533,191 @@ class tT_model:
         
         dateeU_fig.tight_layout()
         return dateeU_fig
+    
+    def arrhenius(self, diff_params, tolerance, eject='True', log2_nodes=13):
+        '''
+        Creates data points for a model Arrhenius curve from a step-heating recipe. Model results can be compared to measured data.
+
+        Parameters
+        ----------
+        diff_parameters: dictionary of floats
+            Exchange coefficients (kappa_1 and kappa_2), and fraction amorphous (f) for multi-path diffusion.
+
+        tolerance: float
+            Convergence criterion for iterative diffusion algorithm
+
+        eject: optional boolean
+            Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
+        
+        log2_nodes: optional int
+            The number of nodes (2**log2_nodes + 1) used in the finite difference scheme. Default is 13 (8192 nodes + 1).
+            
+        Returns
+        -------
+
+        arrhenius_data: list of 3 column arrays 
+            A list of 3 column arrays of 10000/T (in K), ln(D/a2) (in 1/s), and fractional loss data points for each grain input.
+
+        profile_data: list of 3 columns arrays
+            A list of 3 column arrays of bulk He, fast path He, and lattice He concentration profile (in atoms per volume, base of 1/(4/3 * Pi)) for each grain input       
+        
+        '''
+        tT_in = self.__tT_in
+        grains = self.__grain_in
+
+        arrhenius_data = []
+        profile_data = []
+
+        for i in range(len(grains.index)):
+            # unpack data frame, size in microns, age in Ma 
+            dose_age = grains.iloc[i, 1]
+            size  = grains.iloc[i, 3] 
+            U_ppm = grains.iloc[i, 4]
+            Th_ppm = grains.iloc[i, 5]
+            Sm_ppm = grains.iloc[i, 6]
+            diff_model = grains.iloc[i, 7]
+            anneal_model = grains.iloc[i, 8]
+
+            if grains.iloc[i, 0] == 'apatite':
+                return None    
+            elif grains.iloc[i, 0] == 'zircon':
+                model_grain = zircon(
+                                size, 
+                                log2_nodes, 
+                                tT_in, 
+                                anneal_model, 
+                                U_ppm, 
+                                Th_ppm, 
+                                Sm_ppm,
+                            )
+            else:
+                return None
+            
+            #create the initial profiles
+            #create production lists that consider (or don't) alpha ejection
+            if eject:
+                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.zircon_alpha_ejection()
+            else:
+                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.zircon_no_ejection()
+            
+            init_age = dose_age * sec_per_myr
+
+            init_He = np.array(
+                [
+                    8
+                    * aej_U238[i]
+                    * (np.exp(lambda_238 * init_age) - 1) 
+                    + 7
+                    * aej_U235[i]
+                    * (np.exp(lambda_235 * init_age) - 1) 
+                    + 6
+                    * aej_Th[i]
+                    * (np.exp(lambda_232 * init_age) - 1) 
+                    + aej_Sm[i]
+                    * (np.exp(lambda_147 * init_age) - 1)
+                    for i in range(model_grain.get_nodes())   
+                ]
+            )
+
+            init_fast_He = diff_params['f'] * init_He
+            init_lat_He = (1 - diff_params['f']) * init_He
+
+            #calculate the total amount of initial He, accounting for alpha ejected profiles
+            #convert He profile into a spherical function for integration
+            integral = [
+                init_He[i] * 4 * np.pi * ((0.5 + i) * model_grain.get_r_step()) ** 2 
+                for i in range(model_grain.get_nodes())
+            ]
+
+            total_init_He = romb(integral, model_grain.get_r_step())
+
+            #units in atoms per volume (base of 1/(4/3 * Pi))
+            total_init_He = total_init_He / ((4 / 3) * np.pi)
+
+            frac_loss_pre = 0
+        
+            #set diffusion model, only option for now is 'mp_diffusion'
+            if diff_model == 'mp_diffusion':
+
+                D_a2_array = np.zeros((np.size(tT_in, 0), 3))
+                profiles = np.zeros((model_grain.get_nodes(), 3))
+                
+                #calculate fractional loss for each segment of the step-heating recipe
+                for j in range(np.size(tT_in, 0)):             
+                    
+                    time = tT_in[j, 0]
+                    temp = tT_in[j, 1]
+
+                    #create a 2 row time-step array for each segment of the step-heating recipe
+                    diff_tT = np.array(
+                        [[time, temp + 273.15], [0, temp + 273.15]]
+                    )
+
+                    #create a grain that will undergo diffusion within each step-heating segment
+                    diffuse_grain = zircon(
+                                size, 
+                                log2_nodes, 
+                                diff_tT, 
+                                anneal_model, 
+                                U_ppm, 
+                                Th_ppm, 
+                                Sm_ppm,
+                            )
+                    
+                    #determine diffusivities for diffused grain, add to parameters dictionary
+                    fast_diffs, lat_diffs, bulk_diffs = diffuse_grain.mp_diffs([total_init_He])
+                    diff_params['D_sc'] = fast_diffs
+                    diff_params['D_v'] = lat_diffs
+                    
+                    #perform multi-path diffusion and get the various diffusion profiles
+                    bulk_He, fast_He, lat_He, total_He = diffuse_grain.mp_profile(
+                        diff_params, 
+                        tolerance,
+                        init_fast_He,
+                        init_lat_He,
+                        eject=False,  
+                        produce=False,
+                    )
+
+                    #calculate D/a2 from fractional loss
+                    frac_loss =  1 - total_He/total_init_He
+                    if frac_loss < 0.85:
+                        D_a2 = (
+                            (1 / (np.pi**2 * time)) * 
+                                (
+                                    (-np.pi**2 / 3) * (frac_loss - frac_loss_pre) - 
+                                    2 * np.pi * 
+                                    (
+                                        np.sqrt(1 - np.pi * frac_loss / 3) - 
+                                        np.sqrt(1 - np.pi * frac_loss_pre / 3)
+                                     )
+                                )
+                        )
+                    else:
+                        D_a2 = (
+                            -1 / (np.pi**2 * time) 
+                            * np.log((1 - frac_loss) / (1 - frac_loss_pre))
+                        )
+                    
+                    #save ln(D/a2) value to arrhenius list for this grain
+                    D_a2_array[j, 0] = 1e4/(temp + 273.15) 
+                    D_a2_array[j, 1] = np.log(D_a2)
+                    D_a2_array[j, 2] = frac_loss
+
+                    #update diffusion profiles and fracitional loss for next step-heating segment
+                    init_fast_He = fast_He
+                    init_lat_He = lat_He
+                    frac_loss_pre = frac_loss
+            else:
+                return None
+            
+            profiles[:, 0] = bulk_He
+            profiles[:, 1] = fast_He
+            profiles[:, 2] = lat_He
+            
+            #save arrhenius and profile list for this grain to array of lists for all grains
+            arrhenius_data.append(D_a2_array)
+            profile_data.append(profiles)
+
+        return arrhenius_data, profile_data
+        

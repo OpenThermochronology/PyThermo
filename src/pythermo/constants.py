@@ -1,7 +1,7 @@
 """ 
 constants.py
 
-Universal libraries and constants used by files crystals.py, tT_path.py, and tT_model.py 
+Universal constants used by files crystals.py, tT_path.py, and tT_model.py 
 
 """
 import numpy as np
@@ -14,9 +14,9 @@ sec_per_yr = 3.15569259747 * 10**7
 gas_constant = 0.008314462618
 
 #jaffey decay constants, 1/s
-lambda_232 = np.log(2) / (1.405 * 10**10) * (1/sec_per_yr)
-lambda_235 = np.log(2) / (7.0381 * 10**8) * (1/sec_per_yr)
-lambda_238 = np.log(2) / (4.4683 * 10**9) * (1/sec_per_yr)
+lambda_232 = np.log(2) / (1.405 * 10**10) * (1 / sec_per_yr)
+lambda_235 = np.log(2) / (7.0381 * 10**8) * (1 / sec_per_yr)
+lambda_238 = np.log(2) / (4.4683 * 10**9) * (1 / sec_per_yr)
 
 #jaffey decay constants, 1/yr
 lambda_232_yr = np.log(2) / (1.405 * 10**10) 
