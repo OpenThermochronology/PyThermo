@@ -534,20 +534,23 @@ class tT_model:
         dateeU_fig.tight_layout()
         return dateeU_fig
     
-    def arrhenius(self, diff_params, tolerance, eject='True', log2_nodes=13):
+    def arrhenius(self, diff_params, tolerance, eject='True', grain_diffs=None, log2_nodes=13):
         '''
         Creates data points for a model Arrhenius curve from a step-heating recipe. Model results can be compared to measured data.
 
         Parameters
         ----------
-        diff_parameters: dictionary of floats
-            Exchange coefficients (kappa_1 and kappa_2), and fraction amorphous (f) for multi-path diffusion.
+        diff_parameters: dictionary of floats and strings
+            Exchange coefficients ('kappa_1' and 'kappa_2'), fraction amorphous model type ('f_type'), and mode for initial He distribtuion ('init_style') for multi-path diffusion.
 
         tolerance: float
             Convergence criterion for iterative diffusion algorithm
 
         eject: optional boolean
             Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
+
+        grain_diffs: optional 3 column array
+            A 3 column array that contains user-defined fast-path diffusivities (1st column), lattice diffusivities (2nd column), and bulk diffusivities (3rd column). Number of rows must match the number of heating step and diffusivities must be matched to temperature. Default is None, which allows the function to assign predetermined diffusivities in the case of multi-path diffusion.
         
         log2_nodes: optional int
             The number of nodes (2**log2_nodes + 1) used in the finite difference scheme. Default is 13 (8192 nodes + 1).
@@ -568,6 +571,15 @@ class tT_model:
         arrhenius_data = []
         profile_data = []
 
+        #constants for fraction amorphous equations
+
+        #mass of amorphous material produced per alpha event (g/alpha)
+        #Palenik et al. 2003
+        B_a = 5.48e-19  
+        
+        #extra parameter for single-overlap and double-overlap models
+        n = 10
+
         for i in range(len(grains.index)):
             # unpack data frame, size in microns, age in Ma 
             dose_age = grains.iloc[i, 1]
@@ -577,6 +589,36 @@ class tT_model:
             Sm_ppm = grains.iloc[i, 6]
             diff_model = grains.iloc[i, 7]
             anneal_model = grains.iloc[i, 8]
+            
+            #calculate dose for the grain
+            t_dose = dose_age * sec_per_myr
+            U238 = U_ppm * U238_ppm_atom
+            U235 = U_ppm * U235_ppm_atom
+            Th232 = Th_ppm * Th_ppm_atom
+            Sm147 = Sm_ppm * Sm_ppm_atom
+            dose = (
+                8 
+                * U238
+                * (np.exp(lambda_238 * t_dose) - 1) 
+                + 7 
+                * U235
+                * (np.exp(lambda_235 * t_dose) - 1) 
+                + 6 
+                * Th232
+                * (np.exp(lambda_232 * t_dose) - 1) 
+                + Sm147
+                * (np.exp(lambda_147 * t_dose) - 1)
+            )
+
+            #determine fraction amorphous from several options
+            if diff_params['f_type'] == 'SO':
+                f = 1 - ((1 + B_a * dose) * np.exp(-(B_a * dose)))**n
+            elif diff_params['f_type'] == 'DO':
+                f = 1 - ((1 + B_a*dose + B_a**2*dose**2/2) * np.exp(-B_a * dose))**n
+            else:
+                f = 1 - np.exp(-B_a * dose)
+                
+            diff_params['f'] = f
 
             if grains.iloc[i, 0] == 'apatite':
                 return None    
@@ -618,9 +660,17 @@ class tT_model:
                     for i in range(model_grain.get_nodes())   
                 ]
             )
-
-            init_fast_He = diff_params['f'] * init_He
-            init_lat_He = (1 - diff_params['f']) * init_He
+            
+            #decide how to distribute the helium among pathways for the initial time step
+            if diff_params['init_style'] == 'distribute':
+                init_fast_He = diff_params['f'] * init_He
+                init_lat_He = (1 - diff_params['f']) * init_He
+            elif diff_params['init_style'] == 'lattice':
+                init_fast_He = 0 * init_He
+                init_lat_He = init_He
+            elif diff_params['init_style'] == 'fast_path':
+                init_fast_He = init_He
+                init_lat_He = 0 * init_He
 
             #calculate the total amount of initial He, accounting for alpha ejected profiles
             #convert He profile into a spherical function for integration
@@ -630,11 +680,14 @@ class tT_model:
             ]
 
             total_init_He = romb(integral, model_grain.get_r_step())
-
+            
             #units in atoms per volume (base of 1/(4/3 * Pi))
             total_init_He = total_init_He / ((4 / 3) * np.pi)
-
             frac_loss_pre = 0
+
+            #set diffused profiles for first tT step
+            fast_He = init_fast_He
+            lat_He = init_lat_He
         
             #set diffusion model, only option for now is 'mp_diffusion'
             if diff_model == 'mp_diffusion':
@@ -650,9 +703,9 @@ class tT_model:
 
                     #create a 2 row time-step array for each segment of the step-heating recipe
                     diff_tT = np.array(
-                        [[time, temp + 273.15], [0, temp + 273.15]]
+                        [[time, temp], [0, temp]]
                     )
-
+                    
                     #create a grain that will undergo diffusion within each step-heating segment
                     diffuse_grain = zircon(
                                 size, 
@@ -665,55 +718,45 @@ class tT_model:
                             )
                     
                     #determine diffusivities for diffused grain, add to parameters dictionary
-                    fast_diffs, lat_diffs, bulk_diffs = diffuse_grain.mp_diffs([total_init_He])
+                    if grain_diffs is not None:
+                        fast_diffs = np.array([grain_diffs[j, 0]])
+                        lat_diffs = np.array([grain_diffs[j, 1]])
+                        bulk_diffs = np.array([grain_diffs[j, 2]])
+                    else:
+                        fast_diffs, lat_diffs, bulk_diffs = diffuse_grain.mp_diffs([dose])
+
                     diff_params['D_sc'] = fast_diffs
                     diff_params['D_v'] = lat_diffs
-                    
+
                     #perform multi-path diffusion and get the various diffusion profiles
-                    bulk_He, fast_He, lat_He, total_He = diffuse_grain.mp_profile(
+                    bulk_He, fast_He, lat_He, total_bulk_He = diffuse_grain.mp_profile(
                         diff_params, 
                         tolerance,
-                        init_fast_He,
-                        init_lat_He,
+                        fast_He,
+                        lat_He,
                         eject=False,  
                         produce=False,
                     )
 
-                    #calculate D/a2 from fractional loss
-                    frac_loss =  1 - total_He/total_init_He
-                    if frac_loss < 0.85:
-                        D_a2 = (
-                            (1 / (np.pi**2 * time)) * 
-                                (
-                                    (-np.pi**2 / 3) * (frac_loss - frac_loss_pre) - 
-                                    2 * np.pi * 
-                                    (
-                                        np.sqrt(1 - np.pi * frac_loss / 3) - 
-                                        np.sqrt(1 - np.pi * frac_loss_pre / 3)
-                                     )
-                                )
-                        )
-                    else:
-                        D_a2 = (
-                            -1 / (np.pi**2 * time) 
-                            * np.log((1 - frac_loss) / (1 - frac_loss_pre))
-                        )
+                    #calculate fractional loss
+                    frac_loss_bulk =  1 - total_bulk_He/total_init_He                
                     
-                    #save ln(D/a2) value to arrhenius list for this grain
+                    #calculate D/a2 from frac loss, save ln(D/a2) value to arrhenius list for this grain
                     D_a2_array[j, 0] = 1e4/(temp + 273.15) 
-                    D_a2_array[j, 1] = np.log(D_a2)
-                    D_a2_array[j, 2] = frac_loss
+                    D_a2_array[j, 1] = np.log(self.frac_loss(frac_loss_bulk, frac_loss_pre, time))
+                    D_a2_array[j, 2] = frac_loss_bulk
 
-                    #update diffusion profiles and fracitional loss for next step-heating segment
-                    init_fast_He = fast_He
-                    init_lat_He = lat_He
-                    frac_loss_pre = frac_loss
+                    #fractional loss for next step-heating segment
+                    frac_loss_pre = frac_loss_bulk
+
+                    print('Temperature step', temp, 'complete.')
             else:
                 return None
             
-            profiles[:, 0] = bulk_He
-            profiles[:, 1] = fast_He
-            profiles[:, 2] = lat_He
+            #normalize concentration profiles to total initial He in the bulk grain
+            profiles[:, 0] = bulk_He / init_He
+            profiles[:, 1] = fast_He / init_He
+            profiles[:, 2] = lat_He / init_He
             
             #save arrhenius and profile list for this grain to array of lists for all grains
             arrhenius_data.append(D_a2_array)
@@ -721,3 +764,50 @@ class tT_model:
 
         return arrhenius_data, profile_data
         
+    def frac_loss(self, frac, frac_pre, time, shape='sphere'):
+        '''
+        Helper function for calculating D/a2 values from fractional loss. Based on equations of Fechtig and Kalbitzer, 1966 as modified by McDougall and Harrison, 1999. Currently only accepts the geometric shape of "sphere".
+
+        Parameters
+        ----------
+        frac: float
+            The fractional amount of gas present in the current time-temperature step.
+
+        frac_pre: float
+            The fractional amount of gas from the previous time-temperature step
+
+        time: float
+            The time duration of the time-temperature step, in seconds.
+
+        shape: string
+            The geometric shape of the object. Default is 'sphere'. 
+
+        Returns
+        -------
+
+        D_a2: float
+            The diffusivity of an object calculated from its fractional loss, normalized to size. Units of 1/s.
+        '''
+
+        if shape == 'sphere':
+            if frac < 0.85:
+                D_a2 = (
+                    (1 / (np.pi**2 * time)) * 
+                        (
+                            (-np.pi**2 / 3) * (frac - frac_pre) - 
+                                2 * np.pi * 
+                                (
+                                    np.sqrt(1 - np.pi * frac / 3) - 
+                                    np.sqrt(1 - np.pi * frac_pre / 3)
+                                )
+                        )
+                    )
+            else:
+                D_a2 = (
+                    -1 / (np.pi**2 * time) 
+                    * np.log((1 - frac) / (1 - frac_pre))
+                )
+        else:
+            print('Fractional loss equation requires a shape!')
+
+        return D_a2

@@ -456,13 +456,13 @@ class crystal:
         Returns
         -------
 
-        bulk_He_profile: list of floats
+        bulk_He_profile: 1D array of floats
             The 1D radial profile of diffused He in the bulk grain
         
-        fast_He_profile: list of floats
+        fast_He_profile: 1D array of floats
             The 1D radial profile of diffused He in the fast pathways
 
-        lat_He_profile: list of floats
+        lat_He_profile: 1D array of floats
             The 1D radial profile of diffused He in the lattice
 
         """
@@ -665,9 +665,9 @@ class crystal:
                 u_lat_n = u_lat  
         
         #convert each u profile to a He concentration profile
-        fast_He_profile = [u_fp_n[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
-        lat_He_profile = [u_lat_n[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
-        bulk_He_profile = [(u_fp_n[i] + u_lat_n[i])/ ((i + 0.5) * r_step) for i in range(0, nodes)]
+        fast_He_profile = np.array([u_fp_n[i] / ((i + 0.5) * r_step) for i in range(0, nodes)])
+        lat_He_profile = np.array([u_lat_n[i] / ((i + 0.5) * r_step) for i in range(0, nodes)])
+        bulk_He_profile = np.array([(u_fp_n[i] + u_lat_n[i])/ ((i + 0.5) * r_step) for i in range(0, nodes)])
         
         return bulk_He_profile, fast_He_profile, lat_He_profile
     
@@ -730,7 +730,7 @@ class crystal:
         sub_tT[0,0] = dt
         for i in range(1, initial_damp):
             sub_tT[i,0] = dt -  (dt_int + i * dt_int)
-
+        
         tau_1 = sub_tT[i,0] * (beta - 1) / (beta**M - 1)
 
         delta_t = 0
@@ -1368,12 +1368,12 @@ class zircon(crystal):
         SV = 1.669
 
         #Guenthner et al. (XXXX) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
-        D0_z = 2.0e-3 * 10**8 
+        D0_z = 100000.0 * 10**8 
         D0_N17 = 0.0034 * 10**8
-        Ea_z = 52.0
+        Ea_z = 150.0
         Ea_N17 = 71.0
-        Ea_trap = 160 
-        gamma = 2e-19
+        Ea_trap = 10.0 
+        gamma = 0.15
         omega = 0.25
         kappa_2 = -1e-4
         k_star = 1e-14
@@ -1382,7 +1382,6 @@ class zircon(crystal):
         for i in range(len(damage)):
             #average temp between time steps in K
             temp_K = ((relevant_tT[i, 1] + 273.15) + (relevant_tT[i + 1, 1] + 273.15)) / 2
-
             #tort parameters
             f_a_DI = 1 - np.exp(-B_a * damage[i])
             l_int = (4.2 / (f_a_DI * SV)) - 2.5
@@ -1390,7 +1389,7 @@ class zircon(crystal):
             D0_v = D0_z * (1 / tau)
 
             #trap parameters
-            psi = (gamma * damage[i]**omega * np.exp(Ea_trap/(gas_constant * temp_K))) + 1
+            psi = (gamma * f_a_DI * np.exp(Ea_trap/(gas_constant * temp_K))) + 1
 
             #lattice (volume) diffusivity
             D_v = D0_v * np.exp(-Ea_z / (gas_constant * temp_K)) / psi
@@ -1460,10 +1459,9 @@ class zircon(crystal):
         lat_He_profile: list of floats
             The 1D radial profile of diffused He in the lattice
 
-        total_He: float
-            The total amount of helium present in atoms per spherical volume (base of 1/(4/3 * Pi))
+        total_bulk_He: float
+            The total amount of bulk helium present in atoms per spherical volume (base of 1/(4/3 * Pi)) 
  
-        
         """
 
         #create production lists that consider (or don't) alpha ejection
@@ -1482,7 +1480,7 @@ class zircon(crystal):
             init_lat_He[i] * (i + 0.5) * self.__r_step for i in range(0, self.__nodes)
             ])
 
-        bulk_He, fast_He, lat_He = self.mp_diffusion(
+        bulk_He_profile, fast_He_profile, lat_He_profile = self.mp_diffusion(
             self.__nodes, 
             self.__r_step, 
             self.__relevant_tT, 
@@ -1497,29 +1495,30 @@ class zircon(crystal):
             produce,
         )
 
-        #use Romberg integration to calculate total amount of He
+        #use Romberg integration to calculate total amount of He for each profile
         #check for zero helium concentration
-        minimum_He = bulk_He[0] * 0.5 * self.__r_step
-        for i in range(self.__nodes):
-            if bulk_He[i] < minimum_He:
-                minimum_He = bulk_He[i]
+        minimum_bulk_He = np.min(bulk_He_profile)
+        bulk_not_0 = True
+
+        if minimum_bulk_He < -bulk_He_profile[0] * 0.5:
+            total_bulk_He = 0
+            bulk_not_0 = False
         
-        if minimum_He < -bulk_He[0] * 0.5:
-            total_He = 0
-            return total_He
 
         #convert He profile into a spherical function for integration
-        integral = [
-            bulk_He[i] * 4 * np.pi * ((0.5 + i) * self.__r_step) ** 2 
+        integral_bulk = [
+            bulk_He_profile[i] * 4 * np.pi * ((0.5 + i) * self.__r_step) ** 2 
             for i in range(self.__nodes)
         ]
 
-        total_He = romb(integral, self.__r_step)
+        if bulk_not_0:
+            total_bulk_He = romb(integral_bulk, self.__r_step)
+
 
         #units in atoms per volume (base of 1/(4/3 * Pi))
-        total_He = total_He / ((4 / 3) * np.pi)
+        total_bulk_He = total_bulk_He / ((4 / 3) * np.pi)
 
-        return bulk_He, fast_He, lat_He, total_He
+        return bulk_He_profile, fast_He_profile, lat_He_profile, total_bulk_He
 
 class apatite(crystal):
     def __init__(
