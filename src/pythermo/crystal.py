@@ -24,6 +24,7 @@ from .constants import (
 )
 from scipy.linalg import solve_banded
 from scipy.integrate import romb
+import warnings
 
 class crystal:
     def __init__(self):
@@ -63,7 +64,7 @@ class crystal:
         Returns
         -------
 
-        aej_U238, aej_U235, aej_Th, aej_Sm: lists of floats
+        aej_U238, aej_U235, aej_Th, aej_Sm: arrays of floats
             Alpha ejection corrected U238, U235, Th, and Sm distribution for a 1D radial profile from center of the grain to edge, units in atoms/g
 
         corr_factors: dictionary of floats
@@ -94,146 +95,116 @@ class crystal:
             as_Th = 0
             as_Sm = 0
 
-        #alpha ejection profile lists for each isotope
-        aej_U238 = [
-            (
-                U238_atom 
-                * (
-                    0.5 
-                    + (
-                        (
-                            (((i + 0.5) * r_step) ** 2 + radius**2 - as_U238**2)
-                            / (2 * ((i + 0.5) * r_step))
-                        ) 
-                        - ((i + 0.5) * r_step)
-                    )
-                    / (2 * as_U238)
-                )
-                if ((i + 0.5) * r_step) >= (radius - as_U238) 
-                else U238_atom
+        #alpha ejection profile arrays for each isotope
+        #compute radial positions
+        r_pos = (np.arange(nodes) + 0.5) * r_step
+
+        #create masks for each isotope to ensure no divide by zero or very near zero
+        mask_U238 = r_pos >= (radius - as_U238)
+        mask_U235 = r_pos >= (radius - as_U235)
+        mask_Th = r_pos >= (radius - as_Th)
+        mask_Sm = r_pos >= (radius - as_Sm)
+
+        #safe division, only divides where mask is true
+        #still encounter RuntimeWarning because of the - r_pos... but these get discarded anyway with the mask, ignore these
+        #U238
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            ejected_U238 = U238_atom * (
+                0.5 + (
+                    np.divide(
+                        r_pos**2 + radius**2 - as_U238**2,
+                        2 * r_pos,
+                        where = mask_U238,
+                        out = np.zeros(nodes)
+                    ) - r_pos
+                ) / (2 * as_U238)
             )
-            for i in range(nodes)
-        ]
-        
-        aej_U235 = [
-            (
-                U235_atom 
-                * (
-                    0.5 
-                    + (
-                        (
-                            (((i + 0.5) * r_step) ** 2 + radius**2 - as_U235**2)
-                            / (2 * ((i + 0.5) * r_step))
-                        ) 
-                        - ((i + 0.5) * r_step)
-                    )
-                    / (2 * as_U235)
-                ) 
-                if ((i + 0.5) * r_step) >= (radius - as_U235) 
-                else U235_atom
-            ) 
-            for i in range(nodes)
-        ]
-        
+        aej_U238 = np.where(mask_U238, ejected_U238, U238_atom)
+
+        #U235
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            ejected_U235 = U235_atom * (
+                0.5 + (
+                    np.divide(
+                        r_pos**2 + radius**2 - as_U235**2,
+                        2 * r_pos,
+                        where=mask_U235,
+                        out=np.zeros(nodes)
+                    ) - r_pos
+                ) / (2 * as_U235)
+            )
+        aej_U235 = np.where(mask_U235, ejected_U235, U235_atom)
+
+        #Th
         if Th_atom == 0:
-            aej_Th = [0 for i in range(nodes)]
+            aej_Th = np.zeros(nodes)
         else:
-            aej_Th = [
-                (
-                    Th_atom 
-                    * (
-                        0.5 
-                        + (
-                            (
-                                (((i + 0.5) * r_step) ** 2 + radius**2 - as_Th**2)
-                                / (2 * ((i + 0.5) * r_step))
-                            ) 
-                            - ((i + 0.5) * r_step)
-                        )
-                        / (2 * as_Th)
-                    ) 
-                    if ((i + 0.5) * r_step) >= (radius - as_Th) 
-                    else Th_atom
-                ) 
-                for i in range(nodes)
-            ]
-        
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                ejected_Th = Th_atom * (
+                    0.5 + (
+                        np.divide(
+                            r_pos**2 + radius**2 - as_Th**2,
+                            2 * r_pos,
+                            where=mask_Th,
+                            out=np.zeros(nodes)
+                        ) - r_pos
+                    ) / (2 * as_Th)
+                )
+            aej_Th = np.where(mask_Th, ejected_Th, Th_atom)
+
+        #Sm
         if Sm_atom == 0:
-            aej_Sm = [0 for i in range(nodes)]
+            aej_Sm = np.zeros(nodes)
         else:
-            aej_Sm = [
-                (
-                    Sm_atom 
-                    * (
-                        0.5 
-                        + (
-                            (
-                                (((i + 0.5) * r_step) ** 2 + radius**2 - as_Sm**2)
-                                / (2 * ((i + 0.5) * r_step))
-                            ) 
-                            - ((i + 0.5) * r_step)
-                        )
-                        / (2 * as_Sm)
-                    ) 
-                    if ((i + 0.5) * r_step) >= (radius - as_Sm) 
-                    else Sm_atom
-                ) 
-                for i in range(nodes)
-            ]
-        
-        #calculate alpha ejection correction factors for age equation, use an accumulator approach
-        total_U238 = 0.0
-        total_U235 = 0.0
-        total_Th = 0.0
-        total_Sm = 0.0
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                ejected_Sm = Sm_atom * (
+                    0.5 + (
+                        np.divide(
+                            r_pos**2 + radius**2 - as_Sm**2,
+                            2 * r_pos,
+                            where=mask_Sm,
+                            out=np.zeros(nodes)
+                        ) - r_pos
+                    ) / (2 * as_Sm)
+                )
+            aej_Sm = np.where(mask_Sm, ejected_Sm, Sm_atom)
+                
+        #calculate alpha ejection correction factors for age equation
+        outer = (np.arange(1, nodes + 1) * r_step)**3
+        inner = (np.arange(nodes) * r_step)**3
+        vol = outer - inner
 
-        nft_U238 = 0.0
-        nft_U235 = 0.0
-        nft_Th = 0.0
-        nft_Sm = 0.0
+        #weighted sums
+        nft_U238 = np.sum(vol * aej_U238)
+        dft_U238 = np.sum(vol * U238_atom)  
+        nft_U235 = np.sum(vol * aej_U235)
+        dft_U235 = np.sum(vol * U235_atom)
 
-        dft_U238 = 0.0
-        dft_U235 = 0.0
-        dft_Th = 0.0
-        dft_Sm = 0.0
+        total_U238 = U238_atom * np.sum(vol) * 8
+        total_U235 = U235_atom * np.sum(vol) * 7
 
-        inner_vol = 0.0
-        rad_position = 0.0
-        for i in range(nodes):
-            rad_position = rad_position + r_step
-            outer_vol = rad_position**3
-            vol = outer_vol - inner_vol
+        if Th_atom == 0:
+            dft_Th = 1.0
+            total_Th = 0.0
+            nft_Th = 0.0
+        else:
+            nft_Th   = np.sum(vol * aej_Th)
+            dft_Th   = np.sum(vol * Th_atom)
+            total_Th = Th_atom * np.sum(vol) * 6
 
-            total_U238 = total_U238 + U238_atom * (outer_vol - inner_vol)
-            nft_U238 = nft_U238 + vol * aej_U238[i]
-            dft_U238 = dft_U238 + vol * U238_atom
-            total_U235 = total_U235 + U235_atom * (outer_vol - inner_vol)
-            nft_U235 = nft_U235 + vol * aej_U235[i]
-            dft_U235 = dft_U235 + vol * U235_atom
-
-            if Th_atom == 0:
-                #prevents divide by zero
-                dft_Th = 1.0
-            else:
-                total_Th = total_Th + Th_atom * (outer_vol - inner_vol)
-                nft_Th = nft_Th + vol * aej_Th[i]
-                dft_Th = dft_Th + vol * Th_atom
-
-            if Sm_atom == 0:
-                #prevents divide by zero
-                dft_Sm = 1.0
-            else:
-                total_Sm = total_Sm + Sm_atom * (outer_vol - inner_vol)
-                nft_Sm = nft_Sm + vol * aej_Sm[i]
-                dft_Sm = dft_Sm + vol * Sm_atom
-
-            inner_vol = outer_vol
-
-        #scale by production and volume with a base of 1/(4/3 * PI)
-        total_U238 = total_U238 * 8
-        total_U235 = total_U235 * 7
-        total_Th = total_Th * 6
-
+        if Sm_atom == 0:
+            dft_Sm  = 1.0
+            total_Sm = 0.0
+            nft_Sm  = 0.0
+        else:
+            nft_Sm   = np.sum(vol * aej_Sm)
+            dft_Sm   = np.sum(vol * Sm_atom)
+            total_Sm = Sm_atom * np.sum(vol)
+                
         #calculate fts
         ft_U238 = nft_U238 / dft_U238
         ft_U235 = nft_U235 / dft_U235
@@ -255,7 +226,18 @@ class crystal:
         return aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors
 
     def CN_diffusion(
-            self, nodes, r_step, tT_path, diffs, aej_U238, aej_U235, aej_Th, aej_Sm
+            self, 
+            nodes, 
+            r_step, 
+            tT_path, 
+            diffs, 
+            aej_U238, 
+            aej_U235, 
+            aej_Th, 
+            aej_Sm, 
+            init_He=None, 
+            produce=True,
+            divide=False,
             ):
         """ 
         Solves the diffusion equation with production along a 1D radial profile using the Crank-Nicoloson finite difference scheme. Assumes no flux across the center, or inner boundary, node (Neumann boundary condition) and zero concentration along the outer boundary (Dirichlet boundary condition). Production can be zeroed out by passing arrays of zeros for each of the alphe ejection arrays. Original solution and set-up for the algorithm comes from Ketcham (2005) (https://doi.org/10.2138/rmg.2005.58.11), specifically equation 21, and equations 22 and 26 for boundary conditions.
@@ -286,18 +268,31 @@ class crystal:
         
         aej_Sm: 1D array or list
             Alpha ejected 1D profile for 147Sm (in atoms/g), must be length of nodes
+        
+        init_He: optional 1D array
+            1D profile of alphas for lattice, must be length of nodes. Default is None. Must be in terms of radial position. 
+        
+        produce: optional boolean
+            Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True'.
+
+        divide: optional boolean
+            Allows for the time-temperature history to be sub-divided for better precision on the concentration profile. Useful for laboratory heating schedules with small fractional losses. Default is 'False'.
 
         Returns
         -------
 
-        He_profile: list of floats
-            The 1D radial profile of diffused He
+        He_profile: array of floats
+            The 1D radial profile of diffused He (units of atoms/g).
 
         """
         #set up arrays for tridiagonal matrix
         #u is the coordinate transform vector
-        #u = vr, v is the He profile, r is radius 
-        u = np.zeros(nodes)
+        #u = vr, v is the He profile, r is radius
+
+        if init_He is not None:
+            u = init_He
+        else:
+            u = np.zeros(nodes)
 
         #setup diagonal and d (RHS vector, Ax = d)
         #a is sub-, and c is supra-diagonal
@@ -315,84 +310,74 @@ class crystal:
         c = np.ones(nodes)
         c[0] = 0
 
+        #determine if production occurs within each time step
+        if produce:
+            allow = 1
+        else:
+            allow = 0
+
+        indices   = np.arange(nodes)
+        r_positions = (indices + 0.5) * r_step
+
         #step through time from old to young
         for i in range(np.size(tT_path, 0) - 1):
-            t_old = tT_path[i, 0]
-            t_young = tT_path[i + 1, 0]
-            dt = t_old - t_young
-            
-            beta = (2.0 * r_step**2) / (diffs[i] * dt) 
 
-            #Neumann inner boundary condition (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
-            #production term for 1st node
-            alphas = (
+            dt_int = tT_path[i, 0] - tT_path[i + 1, 0]
+            fourier = (diffs[i] * dt_int) / r_step**2
+
+            #subdivide the time step if necessary
+            if fourier > 0.5 and divide:
+                temp = (tT_path[i, 1] + tT_path[i + 1, 1]) / 2
+                M = 100
+                initial_damp = 20
+                sub_tT_path = self.divide_tT(diffs[i], dt_int, temp, r_step, M, initial_damp)
+            else:
+                sub_tT_path = tT_path[i:i + 2, :]
+
+            A = [c, diagonal, a]            
+            for j in range(np.size(sub_tT_path, 0) - 1):
+                t_old = sub_tT_path[j, 0]
+                t_young = sub_tT_path[j + 1, 0]
+                dt = t_old - t_young
+                beta = (2.0 * r_step**2) / (diffs[i] * dt)
+
+                all_alphas = (
                 8
-                * aej_U238[0]
+                * aej_U238
                 * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
                 + 7
-                * aej_U235[0]
+                * aej_U235
                 * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
                 + 6
-                * aej_Th[0]
+                * aej_Th
                 * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                + aej_Sm[0]
+                + aej_Sm
                 * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-            )
-            production = alphas * 0.5 * r_step * beta
-
-            diagonal[0] = -3.0 - beta
-            d[0] = (3.0 - beta) * u[0] - u[1] - production
-
-            #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
-            #production term for last node
-            alphas = (
-                8
-                * aej_U238[-1]
-                * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                + 7
-                * aej_U235[-1]
-                * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                + 6
-                * aej_Th[-1]
-                * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                + aej_Sm[-1]
-                * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-            )
-            production = alphas * (nodes - 0.5) * r_step * beta
-
-            diagonal[-1] = -2.0 - beta
-            d[-1] = (2.0 - beta) * u[-1] - u[-2] - production
-
-            #fill in the rest
-            diagonal[1:nodes-1] = -2.0 - beta
-            for j in range(1, nodes - 1):
-                #production term 
-                alphas = (
-                    8
-                    * aej_U238[j]
-                    * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                    + 7
-                    * aej_U235[j]
-                    * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                    + 6
-                    * aej_Th[j]
-                    * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                    + aej_Sm[j]
-                    * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
                 )
-                production = alphas * (j + 0.5) * r_step * beta
+
+                #production array
+                production = all_alphas * r_positions * beta * allow
+
+                #Neumann inner boundary condition (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
+                diagonal[0] = -3.0 - beta
+                d[0] = (3.0 - beta) * u[0] - u[1] - production[0]
+
+                #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
+                diagonal[-1] = -2.0 - beta
+                d[-1] = (2.0 - beta) * u[-1] - u[-2] - production[-1]
+
+                #fill in the rest
+                diagonal[1:-1] = -2.0 - beta                   
+                d[1:-1] = (2.0 - beta) * u[1:-1] - u[2:] - u[:-2] - production[1:-1]
                 
-                d[j] = (2.0 - beta) * u[j] - u[j+1] - u[j-1] - production
-            
-            #solve it using tridiaonal matrix algorithm, for instructional purposes only, u becomes u_n+1 and repeat
-            #u = self.tridiag(a, diagonal, c, d, nodes)
-            
-            #solve it using scipy banded solver, u becomes u_n+1 and repeat
-            A = [c, diagonal, a]
-            u = solve_banded((1, 1), A, d)
+                #solve it using tridiaonal matrix algorithm, for instructional purposes only, u becomes u_n+1 and repeat
+                #u = self.tridiag(a, diagonal, c, d, nodes)
+                
+                #solve it using scipy banded solver, u becomes u_n+1 and repeat
+                u = solve_banded((1, 1), A, d)
 
         #convert u to the He concentration profile
-        He_profile = [u[i] / ((i + 0.5) * r_step) for i in range(0, nodes)]
+        He_profile = u / r_positions
         return He_profile
     
     def mp_diffusion(
@@ -473,21 +458,6 @@ class crystal:
         kappa_2 = diff_parameters['kappa_2']
         f = diff_parameters['f']
 
-        #lambda function for alpha production calculation
-        decay = lambda rad_pos, t_1, t_2: (
-                8
-                * aej_U238[rad_pos]
-                * (np.exp(lambda_238 * t_1) - np.exp(lambda_238 * t_2)) 
-                + 7
-                * aej_U235[rad_pos]
-                * (np.exp(lambda_235 * t_1) - np.exp(lambda_235 * t_2)) 
-                + 6
-                * aej_Th[rad_pos]
-                * (np.exp(lambda_232 * t_1) - np.exp(lambda_232 * t_2)) 
-                + aej_Sm[rad_pos]
-                * (np.exp(lambda_147 * t_1) - np.exp(lambda_147 * t_2))
-            )
-
         #set up arrays for tridiagonal matrix
         #u = vr, v is the He profile, r is radius
         #u_fp is the fast path, and u_lat is the lattice coordinate transform vector
@@ -529,7 +499,11 @@ class crystal:
                 initial_damp = 20
                 sub_tT_path = self.divide_tT(D_sc[i], dt_int, temp, r_step, M, initial_damp)
             else:
-                sub_tT_path = tT_path[i:i + 1, :]
+                sub_tT_path = tT_path[i:i + 2, :]
+
+            #precompute r positions
+            indices = np.arange(nodes)
+            r_positions = (indices + 0.5) * r_step
 
             #perform diffusion at sub-interval time spacing
             for j in range(np.size(sub_tT_path, 0) - 1):
@@ -542,11 +516,25 @@ class crystal:
                 #initial guess at each sub-interval of u_lat (use previous time step)
                 u_lat = u_lat_n
 
+                #create alpha production array
+                all_alphas = (
+                            8
+                            * aej_U238
+                            * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
+                            + 7
+                            * aej_U235
+                            * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
+                            + 6
+                            * aej_Th
+                            * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
+                            + aej_Sm
+                            * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
+                        )
+
                 #generate RHS vector for fast path concentration from initial u_lat guess
                 #Neumann inner BC (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
                 #production term for 1st node
-                alphas = decay(0, t_old, t_young)
-                production = alphas * f * 0.5 * r_step * beta_sc * allow
+                production = all_alphas[0] * f * 0.5 * r_step * beta_sc * allow
                 partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[0]
                 partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
 
@@ -555,8 +543,7 @@ class crystal:
                 
                 #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
                 #production term for last node
-                alphas = decay(-1, t_old, t_young)
-                production = alphas * f * (nodes - 0.5) * r_step * beta_sc * allow
+                production = all_alphas[-1] * f * (nodes - 0.5) * r_step * beta_sc * allow
                 partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
                 partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
  
@@ -565,16 +552,16 @@ class crystal:
                 
                 #fill in the rest
                 diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                for k in range(1, nodes - 1):
-                    #production term 
-                    alphas = decay(k, t_old, t_young)
-                    production = alphas * f * (k + 0.5) * r_step * beta_sc * allow
-                    partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[k]
-                    partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[k]
-                    
-                    d[k] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[k] - u_fp_n[k+1] - u_fp_n[k-1] - production + partition + partition_n_plus
+                
+                #production term
+                production = all_alphas[1:-1] * f * r_positions[1:-1] * beta_sc * allow
+                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[1:-1]
+                partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[1:-1]
+                
+                d[1:-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[1:-1] - u_fp_n[2:] - u_fp_n[:-2] - production + partition + partition_n_plus
                 
                 #solve for fast path concentration using scipy banded solver
+                #only need to build A once
                 A = [c, diagonal, a]
                 u_fp = solve_banded((1, 1), A, d)
                 
@@ -590,8 +577,7 @@ class crystal:
                                      
                     #generate RHS vector for lattice concentration from fast path solution
                     #Neumann inner BC
-                    alphas = decay(0, t_old, t_young)
-                    production = alphas * (1 - f) * 0.5 * r_step * beta_v * allow
+                    production = all_alphas[0] * (1 - f) * 0.5 * r_step * beta_v * allow
                     partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[0]
                     partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[0]
                     
@@ -599,8 +585,7 @@ class crystal:
                     d[0] = (3.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[0] - u_lat_n[1] - production - partition - partition_n_plus
 
                     #Dirichlet outer BC
-                    alphas = decay(-1, t_old, t_young)
-                    production = alphas * (1 - f) * (nodes - 0.5) * r_step * beta_v * allow
+                    production = all_alphas[-1] * (1 - f) * (nodes - 0.5) * r_step * beta_v * allow
                     partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[-1]
                     partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[-1]
 
@@ -609,22 +594,17 @@ class crystal:
                     
                     #fill in the rest
                     diagonal[1:nodes-1] = -2.0 - beta_v + beta_v * 0.5 * dt * kappa_2
-                    for k in range(1, nodes - 1):
-                        alphas = decay(k, t_old, t_young)
-                        production = alphas * (1 - f) * (k + 0.5) * r_step * beta_v * allow
-                        partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[k]
-                        partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[k]
-                        d[k] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[k] - u_lat_n[k+1] - u_lat_n[k-1] - production - partition - partition_n_plus
+                    production = all_alphas[1:-1] * (1 - f) * r_positions[1:-1] * beta_v * allow
+                    partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[1:-1]
+                    partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[1:-1]
+                    d[1:-1] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[1:-1] - u_lat_n[2:] - u_lat_n[:-2] - production - partition - partition_n_plus
                         
-
                     #solve for lattice concentration using scipy banded solver
-                    A = [c, diagonal, a]
                     u_lat = solve_banded((1, 1), A, d)
                     
                     #generate RHS vector again for fast path concentration from lattice solution
                     #Neumann inner BC
-                    alphas = decay(0, t_old, t_young)
-                    production = alphas * f * 0.5 * r_step * beta_sc * allow
+                    production = all_alphas[0] * f * 0.5 * r_step * beta_sc * allow
                     partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[0]
                     partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
 
@@ -632,8 +612,7 @@ class crystal:
                     d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition + partition_n_plus
                     
                     #Dirichlet outer BC
-                    alphas = decay(-1, t_old, t_young)
-                    production = alphas * f * (nodes - 0.5) * r_step * beta_sc * allow
+                    production = all_alphas[-1] * f * (nodes - 0.5) * r_step * beta_sc * allow
                     partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
                     partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
 
@@ -642,16 +621,13 @@ class crystal:
 
                     #fill in the rest
                     diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                    for k in range(1, nodes - 1):
-                        alphas = decay(k, t_old, t_young)
-                        production = alphas * f * (k + 0.5) * r_step * beta_sc * allow
-                        partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[k]
-                        partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[k]
+                    production = all_alphas[1:-1] * f * r_positions[1:-1] * beta_sc * allow
+                    partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[1:-1]
+                    partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[1:-1]
 
-                        d[k] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[k] - u_fp_n[k+1] - u_fp_n[k-1] - production + partition + partition_n_plus
+                    d[1:-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[1:-1] - u_fp_n[2:] - u_fp_n[:-2] - production + partition + partition_n_plus
 
                     #solve for fast path concentration once more using scipy banded solver
-                    A = [c, diagonal, a]
                     u_fp = solve_banded((1, 1), A, d)
                     
                     #determine diff_max to compare for next iteration of while loop
@@ -665,9 +641,10 @@ class crystal:
                 u_lat_n = u_lat  
         
         #convert each u profile to a He concentration profile
-        fast_He_profile = np.array([u_fp_n[i] / ((i + 0.5) * r_step) for i in range(0, nodes)])
-        lat_He_profile = np.array([u_lat_n[i] / ((i + 0.5) * r_step) for i in range(0, nodes)])
-        bulk_He_profile = np.array([(u_fp_n[i] + u_lat_n[i])/ ((i + 0.5) * r_step) for i in range(0, nodes)])
+        r_vals = (np.arange(nodes) + 0.5) * r_step
+        fast_He_profile = u_fp_n / r_vals
+        lat_He_profile  = u_lat_n / r_vals
+        bulk_He_profile = (u_fp_n + u_lat_n) / r_vals
         
         return bulk_He_profile, fast_He_profile, lat_He_profile
     
@@ -704,12 +681,24 @@ class crystal:
             An array of time-temperature points.
         
         """
+        fourier_set = 0.5
+        dt_int = fourier_set * r_step**2 / D
+
+        #ensure damping steps don't produce negative times when dt_int is large, short-circuit if dt_int is large
+        if dt_int > initial_damp + M:
+            n_steps = int(dt / dt_int) + 1
+            sub_tT = np.zeros((n_steps, 2))
+            for i in range(n_steps):
+                sub_tT[i, 0] = dt - i * dt_int
+            sub_tT[:, 1] = temp
+            return sub_tT
+
         #set up iterative Newton-Raphson solver for eq 24 from Britz et al. (2003)
         fourier_calc = D * dt / r_step**2
         beta_guess = 1.2
         f_beta = fourier_calc * (beta_guess**2 - 1) - (beta_guess**M - 1)
         f_beta_prime = 2*fourier_calc*beta_guess - M*beta_guess**(M-1)
-        tolerance = 1e-6
+        tolerance = 1e-3
 
         beta_diff = beta_guess
 
@@ -722,15 +711,12 @@ class crystal:
             f_beta_prime = 2 * fourier_calc * beta_guess - M * beta_guess**(M - 1)
 
         #add on the initial damping steps
-        fourier_set = 0.5
-        dt_int = fourier_set * r_step**2 / D
         expansion_steps = initial_damp + M
-
+        
         sub_tT = np.zeros((expansion_steps,2))
         sub_tT[0,0] = dt
         for i in range(1, initial_damp):
             sub_tT[i,0] = dt -  (dt_int + i * dt_int)
-        
         tau_1 = sub_tT[i,0] * (beta - 1) / (beta**M - 1)
 
         delta_t = 0
@@ -1253,25 +1239,47 @@ class zircon(crystal):
             )
             for i in range(len(damage))
         ]
-
+    
         return diff_list
             
-    def guenthner_date(self):
+    def zirc_date(self, diff_model, dam_model):
         """
-        Zircon (U-Th)/He date calculator. First, calculates the diffusivity at each time step of class variable relevant_tT using the parameterization of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally, the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
+        Zircon (U-Th)/He date calculator. First calculates the diffusivity at each time step of class variable relevant_tT using various parameterizations. Current available diffusion models include Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01), and Guenthner et al. (XXXX). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally, the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
+
+        Parameters
+        ----------
+
+        diff_model: string
+            Diffusion model, current choices are 'guenthner' for the parameterization of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01), and 'mp_diffusion' for the parameterization of Guenthner et al. (xxxx)
+
+        dam_model: string
+            Damage annealing model, current choices are 'guenthner' for the parameterization of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01)
         
         Returns
         -------
         
         date: float
             Zircon (U-Th)/He date, corrected for alpha ejection
+
+        final_damage: float
+            The total amount of damage (in units of alphas/g) at the end of the time-temperature history.
+
+        He_profile: 1D array of floats
+            The 1D radial profile of diffused He (units of atoms).
+
+        total_He: float
+            The total amount of helium in atoms.
         
         """
         #calculate damage levels using guenthner_damage function
-        damage = self.guenthner_damage()
+        if dam_model == 'guenthner':
+            damage = self.guenthner_damage()
         
         #get diff_list from guenthner_diffs method
-        diff_list = self.guenthner_diffs(damage)
+        if diff_model == 'guenthner':
+            diff_list = self.guenthner_diffs(damage)
+        elif diff_model == 'mp_diffusion':
+            diff_list = self.mp_diffs(damage)[2]
 
         #create production lists that consider alpha ejection
         aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_alpha_ejection()
@@ -1298,7 +1306,8 @@ class zircon(crystal):
         
         if minimum_He < -He_profile[0] * 0.5:
             total_He = 0
-            return total_He
+            final_damage = damage[-1]
+            return total_He, final_damage, He_profile, total_He
 
         #convert He profile into a spherical function for integration
         integral = [
@@ -1320,8 +1329,8 @@ class zircon(crystal):
         total_He = total_He / ((4 / 3) * np.pi)
 
         date = self.He_date(total_He, corr_factors)
-        
-        return date
+        final_damage = damage[-1]
+        return date, final_damage, He_profile, total_He
     
     def mp_diffs(self, damage):
         """
@@ -1344,7 +1353,7 @@ class zircon(crystal):
             Array of the lattice diffusivities as a funcition of damage at each time step of relevant_tT. Length is one less than the number of rows in relevant_tT (because last time step is 0). Diffusivities are in micrometers**2/s.
 
         bulk_diff_array: 1D array of floats
-            Array of the bulk diffusivities as a function of damage at each time step of relevant_tT. Length is one less than the number of rows in relevant_tT (because last time step is 0). Diffusivities are in 1/s.
+            Array of the bulk diffusivities as a function of damage at each time step of relevant_tT. Length is one less than the number of rows in relevant_tT (because last time step is 0). Diffusivities are in micrometers**2/s.
         
         """
         fast_diff_array = np.zeros(len(damage))
@@ -1368,22 +1377,22 @@ class zircon(crystal):
         SV = 1.669
 
         #Guenthner et al. (XXXX) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
-        D0_z = 100000.0 * 10**8 
-        D0_N17 = 0.0034 * 10**8
-        Ea_z = 150.0
-        Ea_N17 = 71.0
-        Ea_trap = 10.0 
-        gamma = 0.15
-        omega = 0.25
-        kappa_2 = -1e-4
-        k_star = 1e-14
-        n = 10
+        D0_z = 1130 * 10**8 
+        D0_sc = 0.0186 * 10**8
+        Ea_z = 165.68
+        Ea_sc = 70.74
+        Ea_trap = 17.1
+        gamma = 0.873
+        kappa_1 = 0.101
+        k_star = 9.33e-10
+        n_sc = 7.038
+        n_t = 0.37
 
         for i in range(len(damage)):
-            #average temp between time steps in K
-            temp_K = ((relevant_tT[i, 1] + 273.15) + (relevant_tT[i + 1, 1] + 273.15)) / 2
+            #average temp between time steps
+            temp_K = (relevant_tT[i, 1] + relevant_tT[i + 1, 1]) / 2
             #tort parameters
-            f_a_DI = 1 - np.exp(-B_a * damage[i])
+            f_a_DI = 1 - np.exp(-B_a * damage[i])**n_t
             l_int = (4.2 / (f_a_DI * SV)) - 2.5
             tau = (l_int_0 / l_int)**2
             D0_v = D0_z * (1 / tau)
@@ -1396,35 +1405,35 @@ class zircon(crystal):
             lat_diff_array[i] = D_v
 
             #fast path (short-circuit) diffusivity
-            D_sc = D0_N17 * np.exp(-Ea_N17 / (gas_constant * temp_K))
+            D_sc = D0_sc * np.exp(-Ea_sc / (gas_constant * temp_K))
             fast_diff_array[i] = D_sc
             
             #fraction amorphous
-            f = 1 - ((1 + B_a * damage[i]) * np.exp(-(B_a * damage[i])))**n
+            f = 1 - ((1 + B_a * damage[i]) * np.exp(-(B_a * damage[i])))**n_sc
 
-            #treat kappa_2 as a constant, solve for kappa_1
-            kappa_1 = -kappa_2 * (1 - f) / (k_star * f)
+            #treat kappa_1 as a constant, solve for kappa_2
+            kappa_2 = -kappa_1 * (k_star * f) / (1 - f)
 
             #bulk diffusivity
-            D_b_a2 = (
+            D_b = (
                 (1 / (kappa_1 - kappa_2)) * 
-                (-kappa_2 * D_sc / radius**2 + kappa_1 * D_v / radius**2)
+                (-kappa_2 * D_sc + kappa_1 * D_v)
             )
-            bulk_diff_array[i] = D_b_a2
+            bulk_diff_array[i] = D_b
         
         return fast_diff_array, lat_diff_array, bulk_diff_array
-    
+
     def mp_profile(
             self, 
             diff_parameters, 
             tolerance, 
-            init_fast_He=None, 
-            init_lat_He=None, 
+            init_fast_He, 
+            init_lat_He, 
             eject=True, 
             produce=True,
             ):
         """
-        Returns the 1D, spherical diffusion profiles for lattice, fast path, and the bulk grain using the multi-path diffusion function. Used for Arrhenius plotting.
+        Returns the 1D, spherical diffusion profiles for lattice, fast path, and the bulk grain using the multi-path diffusion function.
 
         Parameters
         ----------
@@ -1435,11 +1444,11 @@ class zircon(crystal):
         tolerance: float
             Convergence criterion for iterative diffusion algorithm
 
-        init_fast_He: optional 1D array
-            1D profile of alphas (in atoms/g) for fast path, must be length of nodes. Default is None.
-        
-        init_lat_He: optional 1D array
-            1D profile of alphas (in atoms/g) for lattice, must be length of nodes. Default is None.
+        init_fast_He: 1D array
+            1D profile of alphas (in atoms/g) for fast path, must be length of nodes. 
+
+        init_lat_He: 1D array
+            1D profile of alphas (in atoms/g) for lattice, must be length of nodes.
         
         eject: optional boolean
             Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
@@ -1519,6 +1528,99 @@ class zircon(crystal):
         total_bulk_He = total_bulk_He / ((4 / 3) * np.pi)
 
         return bulk_He_profile, fast_He_profile, lat_He_profile, total_bulk_He
+
+    def CN_profile(
+                self, 
+                diffs,  
+                init_He, 
+                eject=True, 
+                produce=True,
+                divide=False
+                ):
+            """
+            Returns the 1D, spherical diffusion profiles for the bulk grain using the Crank-Nicolson diffusion function.
+
+            Parameters
+            ----------
+
+            diffs: 1D array of floats
+                Diffusivities for each time step. Diffusivities must have units of microns^2/s. Must be length of the relevant time-temperature (or step-heating) path.
+
+            init_He: 1D array
+                1D profile of alphas (in atoms/g) for lattice, must be length of nodes.
+            
+            eject: optional boolean
+                Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
+            
+            produce: optional boolean
+                Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True', meaning production will occur.
+            
+            divide: optional boolean
+                Allows for the time-temperature history to be sub-divided for better precision on the concentration profile. Useful for laboratory heating schedules with small fractional losses. Default is 'False'.
+
+
+            
+            Returns
+            ----------
+            bulk_He_profile: list of floats
+                The 1D radial profile of diffused He in the bulk grain
+
+            total_bulk_He: float
+                The total amount of bulk helium present in atoms per spherical volume (base of 1/(4/3 * Pi)) 
+    
+            """
+
+            #create production lists that consider (or don't) alpha ejection
+            if eject:
+                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_alpha_ejection()
+            else:
+                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_no_ejection()
+
+            #convert 1D profiles to radial position profiles
+            #reflects 1st node position as 0.5 * r_step from grain center
+            init_He = np.array([
+                init_He[i] * (i + 0.5) * self.__r_step for i in range(0, self.__nodes)
+                ])
+
+            bulk_He_profile = self.CN_diffusion(
+                self.__nodes, 
+                self.__r_step, 
+                self.__relevant_tT, 
+                diffs,
+                aej_U238, 
+                aej_U235, 
+                aej_Th, 
+                aej_Sm, 
+                init_He,
+                produce,
+                divide
+            )
+
+            #use Romberg integration to calculate total amount of He for each profile
+            #check for zero helium concentration
+            minimum_bulk_He = np.min(bulk_He_profile)
+            bulk_not_0 = True
+
+            if minimum_bulk_He < -bulk_He_profile[0] * 0.5:
+                total_bulk_He = 0
+                bulk_He_profile[:] = 0
+                bulk_not_0 = False
+            
+
+            #convert He profile into a spherical function for integration
+            integral_bulk = [
+                bulk_He_profile[i] * 4 * np.pi * ((0.5 + i) * self.__r_step) ** 2 
+                for i in range(self.__nodes)
+            ]
+
+            if bulk_not_0:
+                total_bulk_He = romb(integral_bulk, self.__r_step)
+
+
+            #units in atoms per volume (base of 1/(4/3 * Pi))
+            total_bulk_He = total_bulk_He / ((4 / 3) * np.pi)
+
+            return bulk_He_profile, total_bulk_He
 
 class apatite(crystal):
     def __init__(
@@ -1676,7 +1778,7 @@ class apatite(crystal):
         
         return damage
     
-    def flowers_diffs(self,damage):
+    def flowers_diffs(self, damage):
         """
         Calculates the diffusivity at each time step of class variable relevant_tT using the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015).
 
@@ -1691,7 +1793,7 @@ class apatite(crystal):
         -------
         
         diff_list: list of floats
-            List of the diffusivities as a function of damage at each time step of relevant_tT
+            List of the diffusivities as a function of damage at each time step of relevant_tT. Units are in micrometers2/s.
         
         """
         #Flowers et al. 2009 damage-diffusivity equation parameters
@@ -1734,22 +1836,42 @@ class apatite(crystal):
 
         return diff_list
     
-    def flowers_date(self):
+    def ap_date(self, diff_model, dam_model):
         """
-        Apatite (U-Th)/He date calculator. First, calculates the diffusivity at each time step of class variable relevant_tT using the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally,the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
+        Apatite (U-Th)/He date calculator. First calculates the diffusivity at each time step of class variable relevant_tT using various parameterizations. Current available diffusion models include Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally,the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
+
+        Parameters
+        ----------
+
+        diff_model: string
+            Diffusion model, current choices are 'flowers' for the Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015).
+
+        dam_model: string
+            Damage annealing model, current choices are 'flowers' for the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015).
 
         Returns
         -------
         
         date: float
             Apatite (U-Th)/He date, corrected for alpha ejection
+
+        final_damage: float
+            The total amount of damage (in units of spontaneous track density) at the end of the time-temperature history.
+
+        He_profile: 1D array of floats
+            The 1D radial profile of diffused He (units of atoms/g).
+        
+        total_He: float
+            The total amount of helium in atoms.
         
         """
         #calculate damage levels using flowers_damage function
-        damage = self.flowers_damage()
+        if diff_model == 'flowers':
+            damage = self.flowers_damage()
 
         #calculate diffusivities using flowers_diffs function
-        diff_list = self.flowers_diffs(damage)
+        if diff_model == 'flowers':
+            diff_list = self.flowers_diffs(damage)
 
         #create production lists that consider alpha ejection
         aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.apatite_alpha_ejection()
@@ -1776,7 +1898,7 @@ class apatite(crystal):
         
         if minimum_He < -He_profile[0] * 0.5:
             total_He = 0
-            return total_He
+            return total_He, final_damage, He_profile, total_He
         
         #convert He profile into a spherical function for integration
         integral = [
@@ -1798,5 +1920,99 @@ class apatite(crystal):
         total_He = total_He / ((4 / 3) *np.pi)
 
         date = self.He_date(total_He, corr_factors)
+        final_damage = damage[-1]
 
-        return date
+        return date, final_damage, He_profile, total_He
+
+    def CN_profile(
+                self, 
+                diffs,  
+                init_He, 
+                eject=True, 
+                produce=True,
+                divide=False,
+                ):
+            """
+            Returns the 1D, spherical diffusion profiles for the bulk grain using the Crank-Nicolson diffusion function.
+
+            Parameters
+            ----------
+
+            diffs: 1D array of floats
+                Diffusivities for each time step. Diffusivities must have units of microns^2/s. Must be length of the relevant time-temperature (or step-heating) path.
+
+            init_He: 1D array
+                1D profile of alphas (in atoms/g) for lattice, must be length of nodes.
+            
+            eject: optional boolean
+                Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
+            
+            produce: optional boolean
+                Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True', meaning production will occur.
+            
+            divide: optional boolean
+                Allows for the time-temperature history to be sub-divided for better precision on the concentration profile. Useful for laboratory heating schedules with small fractional losses. Default is 'False'.
+
+            
+            Returns
+            ----------
+            bulk_He_profile: list of floats
+                The 1D radial profile of diffused He in the bulk grain
+
+            total_bulk_He: float
+                The total amount of bulk helium present in atoms per spherical volume (base of 1/(4/3 * Pi)) 
+    
+            """
+
+            #create production lists that consider (or don't) alpha ejection
+            if eject:
+                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.apatite_alpha_ejection()
+            else:
+                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.apatite_no_ejection()
+
+            #convert 1D profiles to radial position profiles
+            #reflects 1st node position as 0.5 * r_step from grain center
+            init_He = np.array([
+                init_He[i] * (i + 0.5) * self.__r_step for i in range(0, self.__nodes)
+                ])
+
+            bulk_He_profile = self.CN_diffusion(
+                self.__nodes, 
+                self.__r_step, 
+                self.__relevant_tT, 
+                diffs,
+                aej_U238, 
+                aej_U235, 
+                aej_Th, 
+                aej_Sm, 
+                init_He,
+                produce,
+                divide
+            )
+
+            #use Romberg integration to calculate total amount of He for each profile
+            #check for zero helium concentration
+            minimum_bulk_He = np.min(bulk_He_profile)
+            bulk_not_0 = True
+
+            if minimum_bulk_He < -bulk_He_profile[0] * 0.5:
+                total_bulk_He = 0
+                bulk_He_profile[:] = 0
+                bulk_not_0 = False
+            
+
+            #convert He profile into a spherical function for integration
+            integral_bulk = [
+                bulk_He_profile[i] * 4 * np.pi * ((0.5 + i) * self.__r_step) ** 2 
+                for i in range(self.__nodes)
+            ]
+
+            if bulk_not_0:
+                total_bulk_He = romb(integral_bulk, self.__r_step)
+
+
+            #units in atoms per volume (base of 1/(4/3 * Pi))
+            total_bulk_He = total_bulk_He / ((4 / 3) * np.pi)
+
+            return bulk_He_profile, total_bulk_He
+    

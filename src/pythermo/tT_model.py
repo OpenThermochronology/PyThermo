@@ -15,11 +15,13 @@ from .constants import (
     lambda_235, 
     lambda_232, 
     lambda_147,
+    lambda_f,
     U238_ppm_atom,
     U235_ppm_atom,
     Th_ppm_atom,
     Sm_ppm_atom, 
     sec_per_myr,
+    ap_density
 )
 from .crystal import apatite, zircon
 from .tT_path import tT_path
@@ -68,7 +70,7 @@ class tT_model:
     def set_model_data(self, model_data):
         self.__model_data = model_data
 
-    def forward(self, comp_type='size', model_num=1, std_grain=0, log2_nodes=8, colormap='default'):
+    def forward(self, comp_type='size', model_num=2, std_grain=0, log2_nodes=8, colormap='default'):
         """ 
         Runs a forward model for each individual tT path entry in class variable tT_in and the grain inputs in class variable grain_in.
 
@@ -78,7 +80,7 @@ class tT_model:
             Model comparison type for plot output. Can be either 'size' for grain size comparison, or 'model' for annealing or diffusion model comparison. Default is 'size'.
 
         model_num: optional int
-            Number of model comparisons if comp_type = 'model'. Corresponds to number of curves per tT path. Default is 1.
+            Number of model comparisons if comp_type = 'model'. Corresponds to number of curves per tT path. Default is 2.
                 
         std_grain: optional float
             The user-defined 1 sigma standard deviation in grain size for grain size comparison runs. Can be used if obs_data is 'None'. Default is 0.
@@ -86,12 +88,6 @@ class tT_model:
         log2_nodes: optional int
             The number of nodes (2**log2_nodes + 1) used in the Crank-Nicolson diffusion solver. Default is 8 (256 nodes + 1).
         
-        colormap : str or matplotlib Colormap, optional
-            Colormap used for model visualization. The default is a set of 8 colors 
-            (following the xkcd template) and then the plasma colormap for more than 8 models. 
-            Alternatively, the user can provide another matplotlib-supported colormap (e.g., 'viridis').
-            Default is 'default'.
-
         colormap : str or matplotlib Colormap, optional
             Colormap used for model visualization. The default is a set of 8 colors 
             (following the xkcd template) and then the plasma colormap for more than 8 models. 
@@ -136,7 +132,7 @@ class tT_model:
                 model_data = np.zeros((num_grains, num_paths * 3))
                 
         elif comp_type == 'model':
-            model_data = np.zeros((num_grains, num_paths * 3))
+            model_data = np.zeros((num_grains * model_num, num_paths * 3))
 
         else:
             print("Incorrect comparison type entered")
@@ -165,154 +161,240 @@ class tT_model:
                 U_ppm = grains.iloc[j, 4]
                 Th_ppm = grains.iloc[j, 5]
                 Sm_ppm = grains.iloc[j, 6]
+                diff_model = grains.iloc[j, 7]
+                dam_model = grains.iloc[j, 8]
+                
                 #Cooperdock et al. (2019) eU approximation (https://doi.org/10.5194/gchron-1-17-2019)
                 eU_ppm = U_ppm + 0.238 * Th_ppm + 0.0012 * Sm_ppm
 
                 if grains.iloc[j,0] == 'apatite':
-                    if max_size > mean_size:
-                        mean_grain = apatite(
-                            mean_size,
-                            log2_nodes,
-                            ap_tT,
-                            ap_anneal,
-                            U_ppm,
-                            Th_ppm,
-                            Sm_ppm,
-                        )
-                        std_plus_grain = apatite(
-                            max_size,
-                            log2_nodes,
-                            ap_tT,
-                            ap_anneal,
-                            U_ppm,
-                            Th_ppm,
-                            Sm_ppm,
+                    if comp_type == 'size':
+                        if max_size > mean_size:
+                            mean_grain = apatite(
+                                mean_size,
+                                log2_nodes,
+                                ap_tT,
+                                ap_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
                             )
-                        std_minus_grain = apatite(
-                            min_size,
-                            log2_nodes,
-                            ap_tT,
-                            ap_anneal,
-                            U_ppm,
-                            Th_ppm,
-                            Sm_ppm,
+                            std_plus_grain = apatite(
+                                max_size,
+                                log2_nodes,
+                                ap_tT,
+                                ap_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
+                                )
+                            std_minus_grain = apatite(
+                                min_size,
+                                log2_nodes,
+                                ap_tT,
+                                ap_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
+                                )
+
+                            #calculate dates
+                            mean_date = mean_grain.ap_date(diff_model, dam_model)[0]
+                            std_plus_date = std_plus_grain.ap_date(diff_model, dam_model)[0]
+                            std_minus_date = std_minus_grain.ap_date(diff_model, dam_model)[0]
+
+                            #add dates to array
+                            model_data[j, i * 3 // 2] = mean_date
+                            model_data[j + num_grains, i * 3 // 2] = std_plus_date
+                            model_data[j + 2 * num_grains, i * 3 // 2] = std_minus_date
+
+                            #add eU concentrations to array
+                            model_data[j, i * 3 // 2 + 1] = eU_ppm
+                            model_data[j + num_grains, i * 3 // 2 + 1] = eU_ppm
+                            model_data[j + 2 * num_grains, i * 3 // 2 + 1] = eU_ppm
+
+                            #add grain size to array
+                            model_data[j, i * 3 // 2 + 2] = mean_size
+                            model_data[j + num_grains, i * 3 // 2 + 2] = max_size
+                            model_data[j + 2 * num_grains, i * 3 // 2 + 2] = min_size
+
+                        else:
+                            mean_grain = apatite(
+                                mean_size,
+                                log2_nodes,
+                                ap_tT,
+                                ap_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
                             )
 
-                        #calculate dates
-                        mean_date = mean_grain.flowers_date()
-                        std_plus_date = std_plus_grain.flowers_date()
-                        std_minus_date = std_minus_grain.flowers_date()
+                            #calculate date
+                            mean_date = mean_grain.ap_date(diff_model, dam_model)[0]
 
-                        #add dates to array
-                        model_data[j, i * 3 // 2] = mean_date
-                        model_data[j + num_grains, i * 3 // 2] = std_plus_date
-                        model_data[j + 2 * num_grains, i * 3 // 2] = std_minus_date
+                            #add date to array
+                            model_data[j, i * 3 // 2] = mean_date
 
-                        #add eU concentrations to array
-                        model_data[j, i * 3 // 2 + 1] = eU_ppm
-                        model_data[j + num_grains, i * 3 // 2 + 1] = eU_ppm
-                        model_data[j + 2 * num_grains, i * 3 // 2 + 1] = eU_ppm
+                            #add eU concentration to array
+                            model_data[j, i * 3 // 2 + 1] = eU_ppm
 
-                        #add grain size to array
-                        model_data[j, i * 3 // 2 + 2] = mean_size
-                        model_data[j + num_grains, i * 3 // 2 + 2] = max_size
-                        model_data[j + 2 * num_grains, i * 3 // 2 + 2] = min_size
+                            #add grain size to array
+                            model_data[j, i * 3 // 2 + 2] = mean_size
+                    elif comp_type == 'model':
+                        
+                        #calculate date for each model type, set by model_num input
+                        #apatite only has one model currently as an option, place holder here for future options
+                        if model_num == 2:
 
-                    else:
-                        mean_grain = apatite(
-                            mean_size,
-                            log2_nodes,
-                            ap_tT,
-                            ap_anneal,
-                            U_ppm,
-                            Th_ppm,
-                            Sm_ppm,
-                        )
+                            mean_grain_1 = apatite(
+                                grains.iloc[j, 3],
+                                log2_nodes,
+                                ap_tT,
+                                ap_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
+                            )
 
-                        #calculate date
-                        mean_date = mean_grain.flowers_date()
+                            mean_grain_2 = apatite(
+                                grains.iloc[j, 3],
+                                log2_nodes,
+                                ap_tT,
+                                ap_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
+                            )
 
-                        #add date to array
-                        model_data[j, i * 3 // 2] = mean_date
+                            mean_date_1 = mean_grain_1.ap_date(diff_model, dam_model)[0]
+                            mean_date_2 = mean_grain_2.ap_date(diff_model, dam_model)[0]
 
-                        #add eU concentration to array
-                        model_data[j, i * 3 // 2 + 1] = eU_ppm
+                            #add date to array
+                            model_data[j, i * 3 // 2] = mean_date_1
+                            model_data[j + num_grains, i * 3 // 2] = mean_date_2
 
-                        #add grain size to array
-                        model_data[j, i * 3 // 2 + 2] = mean_size
+                            #add eU concentrations to array
+                            model_data[j, i * 3 // 2 + 1] = eU_ppm
+                            model_data[j + num_grains, i * 3 // 2 + 1] = eU_ppm
+
+                            #add grain size to array
+                            model_data[j, i * 3 // 2 + 2] = grains.iloc[j, 3]
+                            model_data[j + num_grains, i * 3 // 2 + 2] = grains.iloc[j, 3]
+
 
                 elif grains.iloc[j, 0] == 'zircon':
-                    if max_size > mean_size:
-                        mean_grain = zircon(
-                            mean_size,
-                            log2_nodes,
-                            zirc_tT,
-                            zirc_anneal,
-                            U_ppm,
-                            Th_ppm,
-                            Sm_ppm,
-                        ) 
-                        std_plus_grain = zircon(
-                            max_size,
-                            log2_nodes,
-                            zirc_tT,
-                            zirc_anneal,
-                            U_ppm,
-                            Th_ppm,
-                            Sm_ppm,
-                        )
-                        std_minus_grain = zircon(
-                            min_size,
-                            log2_nodes,
-                            zirc_tT,
-                            zirc_anneal,
-                            U_ppm,
-                            Th_ppm,
-                            Sm_ppm,
-                        )
+                    if comp_type == 'size':
+                        if max_size > mean_size:
+                            mean_grain = zircon(
+                                mean_size,
+                                log2_nodes,
+                                zirc_tT,
+                                zirc_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
+                            ) 
+                            std_plus_grain = zircon(
+                                max_size,
+                                log2_nodes,
+                                zirc_tT,
+                                zirc_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
+                            )
+                            std_minus_grain = zircon(
+                                min_size,
+                                log2_nodes,
+                                zirc_tT,
+                                zirc_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
+                            )
 
-                        #calculate dates
-                        mean_date = mean_grain.guenthner_date()
-                        std_plus_date = std_plus_grain.guenthner_date()
-                        std_minus_date = std_minus_grain.guenthner_date()
+                            #calculate dates
+                            mean_date = mean_grain.zirc_date(diff_model, dam_model)[0]
+                            std_plus_date = std_plus_grain.zirc_date(diff_model, dam_model)[0]
+                            std_minus_date = std_minus_grain.zirc_date(diff_model, dam_model)[0]
 
-                        #add dates to array
-                        model_data[j, i * 3 // 2] = mean_date
-                        model_data[j + num_grains, i * 3 // 2] = std_plus_date
-                        model_data[j + 2 * num_grains, i * 3 // 2] = std_minus_date
+                            #add dates to array
+                            model_data[j, i * 3 // 2] = mean_date
+                            model_data[j + num_grains, i * 3 // 2] = std_plus_date
+                            model_data[j + 2 * num_grains, i * 3 // 2] = std_minus_date
 
-                        #add eU concentrations to array
-                        model_data[j, i * 3 // 2 + 1] = eU_ppm
-                        model_data[j + num_grains, i * 3 // 2 + 1] = eU_ppm
-                        model_data[j + 2 * num_grains, i * 3 // 2 + 1] = eU_ppm
+                            #add eU concentrations to array
+                            model_data[j, i * 3 // 2 + 1] = eU_ppm
+                            model_data[j + num_grains, i * 3 // 2 + 1] = eU_ppm
+                            model_data[j + 2 * num_grains, i * 3 // 2 + 1] = eU_ppm
 
-                        #add grain size to array
-                        model_data[j, i * 3 // 2 + 2] = mean_size
-                        model_data[j + num_grains, i * 3 // 2 + 2] = max_size
-                        model_data[j + 2 * num_grains, i * 3 // 2 + 2] = min_size
+                            #add grain size to array
+                            model_data[j, i * 3 // 2 + 2] = mean_size
+                            model_data[j + num_grains, i * 3 // 2 + 2] = max_size
+                            model_data[j + 2 * num_grains, i * 3 // 2 + 2] = min_size
 
-                    else:
-                        mean_grain = zircon(
-                            mean_size,
-                            log2_nodes,
-                            zirc_tT,
-                            zirc_anneal,
-                            U_ppm,
-                            Th_ppm,
-                            Sm_ppm,
-                        )
+                        else:
+                            mean_grain = zircon(
+                                mean_size,
+                                log2_nodes,
+                                zirc_tT,
+                                zirc_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
+                            )
 
-                        #calculate date
-                        mean_date = mean_grain.guenthner_date()
+                            #calculate date
+                            mean_date = mean_grain.zirc_date(diff_model, dam_model)[0]
+                
+                            #add date to array
+                            model_data[j, i * 3 // 2] = mean_date
 
-                        #add date to array
-                        model_data[j, i * 3 // 2] = mean_date
+                            #add eU concentration to array
+                            model_data[j, i * 3 // 2 + 1] = eU_ppm
 
-                        #add eU concentration to array
-                        model_data[j, i * 3 // 2 + 1] = eU_ppm
+                            #add grain size to array
+                            model_data[j, i * 3 // 2 + 2] = mean_size
+                    elif comp_type == 'model':
 
-                        #add grain size to array
-                        model_data[j, i * 3 // 2 + 2] = mean_size
+                        #calculate date for each model type, set by model_num input
+                        #zircon currently has two options: 'guenthner' (traditional ZRDAAM) and 'mp_diffusion'
+                        if model_num == 2:
+
+                            mean_grain_1 = zircon(
+                                grains.iloc[j, 3],
+                                log2_nodes,
+                                zirc_tT,
+                                zirc_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
+                            )
+
+                            mean_grain_2 = zircon(
+                                grains.iloc[j, 3],
+                                log2_nodes,
+                                zirc_tT,
+                                zirc_anneal,
+                                U_ppm,
+                                Th_ppm,
+                                Sm_ppm,
+                            )
+
+                            mean_date_1 = mean_grain_1.zirc_date('guenthner', dam_model)[0]
+                            mean_date_2 = mean_grain_2.zirc_date('mp_diffusion', dam_model)[0]
+
+                            #add date to array
+                            model_data[j, i * 3 // 2] = mean_date_1
+                            model_data[j + num_grains, i * 3 // 2] = mean_date_2
+
+                            #add eU concentrations to array
+                            model_data[j, i * 3 // 2 + 1] = eU_ppm
+                            model_data[j + num_grains, i * 3 // 2 + 1] = eU_ppm
+
+                            #add grain size to array
+                            model_data[j, i * 3 // 2 + 2] = grains.iloc[j, 3]
+                            model_data[j + num_grains, i * 3 // 2 + 2] = grains.iloc[j, 3]
 
                 else:
                     print(
@@ -325,7 +407,7 @@ class tT_model:
                     continue
 
         self.set_model_data(model_data)
-        forward_fig = self.date_eU_plot(model_data, num_grains, 'size', colormap=colormap)
+        forward_fig = self.date_eU_plot(model_data, num_grains, comp_type, colormap=colormap)
 
         return forward_fig
 
@@ -368,7 +450,7 @@ class tT_model:
         obs_data = self.__obs_data
 
         #set up the figure with 2 subplots: time_temp  and date_eU
-        dateeU_fig, (time_temp, date_eU) = plt.subplots(2, 1, figsize=[5, 6], dpi=600)
+        dateeU_fig, (time_temp, date_eU) = plt.subplots(2, 1, figsize=[10, 10], dpi=600)
 
         time_temp.set_xlabel('Time (Ma)')
         time_temp.set_ylabel('Temperature $\\degree$C')
@@ -409,7 +491,7 @@ class tT_model:
             color_options = [scalar_map.to_rgba(i) for i in range(num_of_colors)]
 
         #line option cycler for model comparisons
-        line_options = cycler(line_style=['-', '--', ':', '-.'])
+        line_options = ['-', '--', ':', '-.']
 
         #plot date-eU trends
         #assumes that the date-eU trends for each tT plot are in 3-column groups, in this order: date, eU, grain size
@@ -454,7 +536,7 @@ class tT_model:
                     )
 
             elif comp_type == 'model':
-                date_eU.set_prop_cycle(line_options)
+                date_eU.set_prop_cycle(linestyle=line_options)
                 #each diffusion and/or annealing model output is stacked from low to high eU, allows for variable # of model comps
                 for j in range(0, np.size(model_data, 0), grain_num):
                     model_dates = model_data[j : j + grain_num, i]
@@ -534,20 +616,35 @@ class tT_model:
         dateeU_fig.tight_layout()
         return dateeU_fig
     
-    def arrhenius(self, diff_params, tolerance, eject='True', grain_diffs=None, log2_nodes=13):
+    def step_degas(
+            self, 
+            diff_params,
+            diff_type, 
+            tolerance, 
+            eject='True', 
+            init_profile=None, 
+            grain_diffs=None, 
+            log2_nodes=13
+            ):
         '''
-        Creates data points for a model Arrhenius curve from a step-heating recipe. Model results can be compared to measured data.
+        Calculates fractional loss data from step-heating experiment. Corresponding t-T recipe for step-heating needs to be in units of seconds and degrees Celsius. These data can be used for model Arrhenius curves or a Rstep/Rbulk vs. frac_3He data set as used in 4He/3He thermochronomtery. Intended for use with the numerical solution for multi-path diffusion as presented in Guenthner et al. (2026) (doi pending), but simple Crank-Nicolson is also an option.
 
         Parameters
         ----------
-        diff_parameters: dictionary of floats and strings
-            Exchange coefficients ('kappa_1' and 'kappa_2'), fraction amorphous model type ('f_type'), and mode for initial He distribtuion ('init_style') for multi-path diffusion.
+        diff_params: dictionary of floats and strings
+            Exchange coefficients ('kappa_1' and 'kappa_2'), fraction amorphous ('f'), and mode for initial He distribution ('init_style') for multi-path diffusion.
+        
+        diff_type: string
+            A string that determines how diffusion will be numerically modeld. Two options: 'MP' uses the multi-path diffusion algorithm of Guenthner et al. (2026), 'CN' uses simple Crank-Nicolson
 
         tolerance: float
             Convergence criterion for iterative diffusion algorithm
 
         eject: optional boolean
             Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
+
+        init_profile: 1D array of floats
+            User defined initial profile (1D, radial) of helium concentration. Default is 'None'.
 
         grain_diffs: optional 3 column array
             A 3 column array that contains user-defined fast-path diffusivities (1st column), lattice diffusivities (2nd column), and bulk diffusivities (3rd column). Number of rows must match the number of heating step and diffusivities must be matched to temperature. Default is None, which allows the function to assign predetermined diffusivities in the case of multi-path diffusion.
@@ -558,27 +655,27 @@ class tT_model:
         Returns
         -------
 
-        arrhenius_data: list of 3 column arrays 
-            A list of 3 column arrays of 10000/T (in K), ln(D/a2) (in 1/s), and fractional loss data points for each grain input.
+        frac_loss_data: list of 3 column arrays 
+            A list of 3 column arrays of 10000/T (in K), fractional loss data points, and ln(D/a2) (in 1/s) for each grain input.
 
         profile_data: list of 3 columns arrays
-            A list of 3 column arrays of bulk He, fast path He, and lattice He concentration profile (in atoms per volume, base of 1/(4/3 * Pi)) for each grain input       
+            A list of 3 column arrays of bulk He, fast path He, and lattice He concentration profile (in atoms per volume, base of 1/(4/3 * Pi)) for each grain input. If CN diffusion algorithm is used, only the bulk He column contains relevant data.       
         
         '''
         tT_in = self.__tT_in
         grains = self.__grain_in
 
-        arrhenius_data = []
-        profile_data = []
 
-        #constants for fraction amorphous equations
+        #constants for the e_rho_s calculation, as defined in Flowers et al. (2009)
+        eta_q = 0.91
+        L = 0.000815
 
-        #mass of amorphous material produced per alpha event (g/alpha)
-        #Palenik et al. 2003
-        B_a = 5.48e-19  
-        
-        #extra parameter for single-overlap and double-overlap models
+        #constants for dose f_a calculation for multi-path model, as defined by Guenthner et al. (2013)
+        B_a = 5.48e-19 
         n = 10
+
+        frac_loss_data = []
+        profile_data = []
 
         for i in range(len(grains.index)):
             # unpack data frame, size in microns, age in Ma 
@@ -588,7 +685,7 @@ class tT_model:
             Th_ppm = grains.iloc[i, 5]
             Sm_ppm = grains.iloc[i, 6]
             diff_model = grains.iloc[i, 7]
-            anneal_model = grains.iloc[i, 8]
+            dam_model = grains.iloc[i, 8]
             
             #calculate dose for the grain
             t_dose = dose_age * sec_per_myr
@@ -610,24 +707,49 @@ class tT_model:
                 * (np.exp(lambda_147 * t_dose) - 1)
             )
 
-            #determine fraction amorphous from several options
-            if diff_params['f_type'] == 'SO':
-                f = 1 - ((1 + B_a * dose) * np.exp(-(B_a * dose)))**n
-            elif diff_params['f_type'] == 'DO':
-                f = 1 - ((1 + B_a*dose + B_a**2*dose**2/2) * np.exp(-B_a * dose))**n
-            else:
-                f = 1 - np.exp(-B_a * dose)
-                
-            diff_params['f'] = f
+            #calculate e_rho_s for the grain
+            #convert ppm to atoms/cc
+            U235_vol = U235 * ap_density
+            U238_vol = U238 * ap_density
+            Th_vol = Th232 * ap_density
+            Sm_vol = Sm147 * ap_density
+
+            rho_v = (
+                U238_vol
+                * (np.exp(lambda_238 * t_dose) - 1)
+                + (7 / 8)
+                * U235_vol
+                * (np.exp(lambda_235 * t_dose) - 1)
+                + (6 / 8)
+                * Th_vol
+                * (np.exp(lambda_232 * t_dose) - 1)
+                + (1 / 8)
+                * Sm_vol
+                * (np.exp(lambda_147 * t_dose) - 1)
+            ) 
+            
+            e_rho_s = eta_q * L * (lambda_f / lambda_238) * rho_v
+
+            #determine fraction amorphous, needed to distribute He atoms in multi-path model
+            f_a = 1 - ((1 + B_a * dose) * np.exp(-(B_a * dose)))**n
+            diff_params['f'] = f_a              
 
             if grains.iloc[i, 0] == 'apatite':
-                return None    
+                model_grain = apatite(
+                                size, 
+                                log2_nodes, 
+                                tT_in, 
+                                dam_model, 
+                                U_ppm, 
+                                Th_ppm, 
+                                Sm_ppm,
+                            )    
             elif grains.iloc[i, 0] == 'zircon':
                 model_grain = zircon(
                                 size, 
                                 log2_nodes, 
                                 tT_in, 
-                                anneal_model, 
+                                dam_model, 
                                 U_ppm, 
                                 Th_ppm, 
                                 Sm_ppm,
@@ -635,36 +757,42 @@ class tT_model:
             else:
                 return None
             
-            #create the initial profiles
-            #create production lists that consider (or don't) alpha ejection
-            if eject:
-                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.zircon_alpha_ejection()
-            else:
-                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.zircon_no_ejection()
-            
-            init_age = dose_age * sec_per_myr
+            #create the initial profile, if no profile provided
+            if init_profile is None:
+                #create production lists that consider (or don't) alpha ejection
+                if eject and grains.iloc[i, 0] == 'zircon':
+                    aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.zircon_alpha_ejection()
+                elif eject and grains.iloc[i, 0] == 'apatite':
+                    aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.apatite_alpha_ejection()
+                elif grains.iloc[i, 0] == 'zircon':
+                    aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.zircon_no_ejection()
+                elif grains.iloc[i, 0] == 'apatite':
+                    aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.apatite_no_ejection()
+                
+                init_age = dose_age * sec_per_myr
 
-            init_He = np.array(
-                [
-                    8
-                    * aej_U238[i]
-                    * (np.exp(lambda_238 * init_age) - 1) 
-                    + 7
-                    * aej_U235[i]
-                    * (np.exp(lambda_235 * init_age) - 1) 
-                    + 6
-                    * aej_Th[i]
-                    * (np.exp(lambda_232 * init_age) - 1) 
-                    + aej_Sm[i]
-                    * (np.exp(lambda_147 * init_age) - 1)
-                    for i in range(model_grain.get_nodes())   
-                ]
-            )
-            
+                init_He = (
+                
+                        8
+                        * aej_U238
+                        * (np.exp(lambda_238 * init_age) - 1) 
+                        + 7
+                        * aej_U235
+                        * (np.exp(lambda_235 * init_age) - 1) 
+                        + 6
+                        * aej_Th
+                        * (np.exp(lambda_232 * init_age) - 1) 
+                        + aej_Sm
+                        * (np.exp(lambda_147 * init_age) - 1)
+                        
+                )
+            else:
+                init_He = init_profile
+                
             #decide how to distribute the helium among pathways for the initial time step
             if diff_params['init_style'] == 'distribute':
-                init_fast_He = diff_params['f'] * init_He
-                init_lat_He = (1 - diff_params['f']) * init_He
+                init_fast_He = f_a * init_He
+                init_lat_He = (1 - f_a) * init_He
             elif diff_params['init_style'] == 'lattice':
                 init_fast_He = 0 * init_He
                 init_lat_He = init_He
@@ -674,49 +802,63 @@ class tT_model:
 
             #calculate the total amount of initial He, accounting for alpha ejected profiles
             #convert He profile into a spherical function for integration
-            integral = [
-                init_He[i] * 4 * np.pi * ((0.5 + i) * model_grain.get_r_step()) ** 2 
-                for i in range(model_grain.get_nodes())
-            ]
-
+            r_indices = np.arange(model_grain.get_nodes())
+            r_vals = (0.5 + r_indices) * model_grain.get_r_step()
+            integral = init_He * 4 * np.pi * r_vals**2
             total_init_He = romb(integral, model_grain.get_r_step())
             
             #units in atoms per volume (base of 1/(4/3 * Pi))
             total_init_He = total_init_He / ((4 / 3) * np.pi)
             frac_loss_pre = 0
 
+            #establish arrays to store frac loss and profile data
+            frac_loss_array = np.zeros((np.size(tT_in, 0), 3))
+            profiles = np.zeros((model_grain.get_nodes(), 3))
+
             #set diffused profiles for first tT step
             fast_He = init_fast_He
             lat_He = init_lat_He
-        
-            #set diffusion model, only option for now is 'mp_diffusion'
-            if diff_model == 'mp_diffusion':
-
-                D_a2_array = np.zeros((np.size(tT_in, 0), 3))
-                profiles = np.zeros((model_grain.get_nodes(), 3))
+            bulk_He = init_He
                 
-                #calculate fractional loss for each segment of the step-heating recipe
-                for j in range(np.size(tT_in, 0)):             
-                    
-                    time = tT_in[j, 0]
-                    temp = tT_in[j, 1]
+            #calculate fractional loss for each segment of the step-heating recipe
+            for j in range(np.size(tT_in, 0)):             
+                
+                time = tT_in[j, 0]
+                temp = tT_in[j, 1]
 
-                    #create a 2 row time-step array for each segment of the step-heating recipe
-                    diff_tT = np.array(
-                        [[time, temp], [0, temp]]
-                    )
-                    
-                    #create a grain that will undergo diffusion within each step-heating segment
+                #create a 2 row time-step array for each segment of the step-heating recipe
+                #convert temp in Celsius to temp in Kelvin
+                diff_tT = np.array(
+                    [[time, temp + 273.15], [0, temp + 273.15]]
+                )
+
+                #create a grain that will undergo diffusion within each step-heating segment
+                if grains.iloc[i, 0] == 'apatite':
+                    diffuse_grain = apatite(
+                                    size, 
+                                    log2_nodes, 
+                                    diff_tT, 
+                                    dam_model, 
+                                    U_ppm, 
+                                    Th_ppm, 
+                                    Sm_ppm,
+                                )    
+                elif grains.iloc[i, 0] == 'zircon':
                     diffuse_grain = zircon(
-                                size, 
-                                log2_nodes, 
-                                diff_tT, 
-                                anneal_model, 
-                                U_ppm, 
-                                Th_ppm, 
-                                Sm_ppm,
-                            )
-                    
+                                    size, 
+                                    log2_nodes, 
+                                    diff_tT, 
+                                    dam_model, 
+                                    U_ppm, 
+                                    Th_ppm, 
+                                    Sm_ppm,
+                                )
+                else:
+                    return None
+                
+                #set diffusion model, 'MP' for multi-path, 'CN' for simple Crank-Nicolson
+                if diff_type == 'MP':
+
                     #determine diffusivities for diffused grain, add to parameters dictionary
                     if grain_diffs is not None:
                         fast_diffs = np.array([grain_diffs[j, 0]])
@@ -734,24 +876,42 @@ class tT_model:
                         tolerance,
                         fast_He,
                         lat_He,
-                        eject=False,  
-                        produce=False,
+                        eject = False,  
+                        produce = False,
                     )
+                elif diff_type == 'CN':
 
-                    #calculate fractional loss
-                    frac_loss_bulk =  1 - total_bulk_He/total_init_He                
+                    #determine diffusivities for diffused grain
+                    if diff_model == 'guenthner':
+                        bulk_diffs = diffuse_grain.guenthner_diffs([dose])
+                    elif diff_model == 'mp_diffusion':
+                        bulk_diffs = diffuse_grain.mp_diffs([dose])[2]
+                    elif diff_model == 'flowers':
+                        bulk_diffs = diffuse_grain.flowers_diffs([e_rho_s])
+                    else:
+                        return None
                     
-                    #calculate D/a2 from frac loss, save ln(D/a2) value to arrhenius list for this grain
-                    D_a2_array[j, 0] = 1e4/(temp + 273.15) 
-                    D_a2_array[j, 1] = np.log(self.frac_loss(frac_loss_bulk, frac_loss_pre, time))
-                    D_a2_array[j, 2] = frac_loss_bulk
+                    #perform CN diffusion and get the diffusion profile
+                    bulk_He, total_bulk_He = diffuse_grain.CN_profile(
+                        bulk_diffs, 
+                        bulk_He, 
+                        eject = False, 
+                        produce = False,
+                        divide = True,
+                    )
+                    
 
-                    #fractional loss for next step-heating segment
-                    frac_loss_pre = frac_loss_bulk
+                #calculate fractional loss
+                frac_loss_bulk =  1 - total_bulk_He/total_init_He                
+                
+                #calculate D/a2 from frac loss, save ln(D/a2) value to frac loss array for this grain
+                frac_loss_array[j, 0] = 1e4/(temp + 273.15)
+                frac_loss_array[j, 1] = frac_loss_bulk
+                frac_loss_array[j, 2] = np.log(self.frac_loss(frac_loss_bulk, frac_loss_pre, time))
 
-                    print('Temperature step', temp, 'complete.')
-            else:
-                return None
+                #fractional loss for next step-heating segment
+                frac_loss_pre = frac_loss_bulk
+           
             
             #normalize concentration profiles to total initial He in the bulk grain
             profiles[:, 0] = bulk_He / init_He
@@ -759,11 +919,11 @@ class tT_model:
             profiles[:, 2] = lat_He / init_He
             
             #save arrhenius and profile list for this grain to array of lists for all grains
-            arrhenius_data.append(D_a2_array)
+            frac_loss_data.append(frac_loss_array)
             profile_data.append(profiles)
 
-        return arrhenius_data, profile_data
-        
+        return frac_loss_data, profile_data
+
     def frac_loss(self, frac, frac_pre, time, shape='sphere'):
         '''
         Helper function for calculating D/a2 values from fractional loss. Based on equations of Fechtig and Kalbitzer, 1966 as modified by McDougall and Harrison, 1999. Currently only accepts the geometric shape of "sphere".
