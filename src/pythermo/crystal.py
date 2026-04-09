@@ -1866,7 +1866,7 @@ class apatite(crystal):
         
         """
         #calculate damage levels using flowers_damage function
-        if diff_model == 'flowers':
+        if dam_model == 'flowers':
             damage = self.flowers_damage()
 
         #calculate diffusivities using flowers_diffs function

@@ -199,8 +199,8 @@ def test_guenthner_damage(zirc):
     assert np.isnan(damage).any() == False
     assert np.any(damage < 0) == False
 
-def test_guenthner_date(zirc):
-    zirc_date = zirc.guenthner_date()
+def test_zirc_date(zirc):
+    zirc_date = zirc.zirc_date()
     assert zirc_date > 0
     assert zirc_date < 500
 
@@ -212,7 +212,7 @@ def test_flowers_damage(ap):
     assert np.isnan(damage).any() == False
     assert np.any(damage < 0) == False
 
-def test_flowers_date(ap):
-    ap_date = ap.flowers_date()
+def test_ap_date(ap):
+    ap_date = ap.ap_date()
     assert ap_date > 0
     assert ap_date < 500
