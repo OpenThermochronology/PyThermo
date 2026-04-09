@@ -1,11 +1,12 @@
 import pythermo as pyt
 import pandas as pd
 import numpy as np
+import pytest
 
 #useful helper functions
 
-def make_grains(mineral="zircon", n=1, dam_model="guenthner",
-                diff_model="guenthner", size=60.0,
+def make_grains(mineral='zircon', n=1, dam_model='guenthner',
+                diff_model='guenthner', size=60.0,
                 U_ppm=100.0, Th_ppm=50.0, Sm_ppm=10.0, age_ma=100.0):
     rows = [{
         0: mineral,          # mineral type
@@ -25,17 +26,17 @@ def make_tT(steps=5, temp_c=300.0, duration_s=3600.0):
     return np.array([[duration_s, temp_c]] * steps)
 
 
-def make_diff_params(init_style="distribute"):
+def make_diff_params(init_style='distribute'):
     return {
-        "kappa_1": 1e-3,
-        "kappa_2": 1e-5,
-        "f":       0.1,          # overwritten internally
-        "init_style": init_style,
+        'kappa_1': 1e-3,
+        'kappa_2': 1e-5,
+        'f':       0.1,          
+        'init_style': init_style,
     }
 
 
-def make_model(mineral="zircon", n_grains=1, dam_model="guenthner",
-               diff_model="guenthner", n_steps=5, temp_c=300.0,
+def make_model(mineral='zircon', n_grains=1, dam_model='guenthner',
+               diff_model='guenthner', n_steps=5, temp_c=300.0,
                age_ma=100.0):
     
     grains = make_grains(mineral=mineral, n=n_grains,
@@ -191,7 +192,7 @@ def test_zirc_forward():
 
 #step_degas tests
 
-# ── 1. Output shape ───────────────────────────────────────────────────────────
+#output shape tests
 
 class TestOutputShape:
     def test_returns_two_lists(self):
@@ -233,8 +234,7 @@ class TestOutputShape:
         assert not np.any(np.isinf(fl[0]))
 
 
-# ── 2. Input validation ───────────────────────────────────────────────────────
-
+#input tests
 class TestInputValidation:
     def test_invalid_mineral_returns_none(self):
         model = make_model(mineral="quartz")
@@ -274,7 +274,7 @@ class TestInputValidation:
         assert fl_fast[0][-1, 1] > fl_default[0][-1, 1]
 
 
-# ── 3. Fractional loss physics ────────────────────────────────────────────────
+#fractional loss tests
 
 class TestFractionalLoss:
     def test_frac_loss_between_zero_and_one(self):
@@ -295,10 +295,9 @@ class TestFractionalLoss:
         assert fl[0][-1, 1] < 0.01
 
     def test_high_temp_long_step_approaches_full_loss(self):
-        model = make_model(n_steps=1, temp_c=1000.0)
         tT = np.array([[1e10, 1000.0]])           # very long step
         grains = make_grains()
-        model2 = HeModel(grains_df=grains, tT=tT)
+        model2 = pyt.tT_model(grains_df=grains, tT=tT)
         fl, _ = model2.step_degas(make_diff_params(), "CN", 1e-6)
         assert fl[0][0, 1] > 0.95
 
@@ -317,7 +316,7 @@ class TestFractionalLoss:
         assert fl_hi[0][0, 0] < fl_lo[0][0, 0]
 
 
-# ── 4. Diffusion type: MP vs CN ───────────────────────────────────────────────
+#diffusion type tests, MP vs CN
 
 class TestDiffusionType:
     def test_MP_runs_without_error(self):
@@ -352,7 +351,7 @@ class TestDiffusionType:
         assert np.allclose(pr[0][:, 2], 0.0)
 
 
-# ── 5. Alpha ejection ─────────────────────────────────────────────────────────
+#alpha ejection tests
 
 class TestAlphaEjection:
     def test_eject_false_runs(self):
@@ -374,7 +373,7 @@ class TestAlphaEjection:
         assert fl_no[0][-1, 1] <= fl_ej[0][-1, 1]
 
 
-# ── 6. Init style ─────────────────────────────────────────────────────────────
+#initial style of He distribution tests
 
 class TestInitStyle:
     def test_lattice_style_fast_path_starts_zero(self):
@@ -396,7 +395,7 @@ class TestInitStyle:
         assert fast > 0 and lat > 0
 
 
-# ── 7. Damage models (CN path) ────────────────────────────────────────────────
+#damage model tests
 
 class TestDamageModelsCN:
     @pytest.mark.parametrize("dam_model,diff_model", [
@@ -417,8 +416,7 @@ class TestDamageModelsCN:
         assert result is None
 
 
-# ── 8. Multi-grain behaviour ──────────────────────────────────────────────────
-
+#test different grain aspects
 class TestMultiGrain:
     def test_two_grains_return_two_results(self):
         model = make_model(n_grains=2)
@@ -430,7 +428,7 @@ class TestMultiGrain:
             make_grains(size=30.0),
             make_grains(size=120.0),
         ], ignore_index=True)
-        model = HeModel(grains_df=grains, tT=make_tT())
+        model = pyt.tT_model(grains_df=grains, tT=make_tT())
         fl, _ = model.step_degas(make_diff_params(), "CN", 1e-6)
         # Smaller grain should lose more He (shorter diffusion path length)
         assert fl[0][-1, 1] > fl[1][-1, 1]
@@ -442,13 +440,12 @@ class TestMultiGrain:
             make_grains(mineral="apatite", dam_model="flowers",
                         diff_model="flowers"),
         ], ignore_index=True)
-        model = HeModel(grains_df=grains, tT=make_tT())
+        model = pyt.tT_model(grains_df=grains, tT=make_tT())
         fl, _ = model.step_degas(make_diff_params(), "CN", 1e-6)
         assert len(fl) == 2
 
 
-# ── 9. tT recipe edge cases ───────────────────────────────────────────────────
-
+#tT recipe edge cases 
 class TestTTRecipe:
     def test_single_step(self):
         model = make_model(n_steps=1, temp_c=300.0)
@@ -458,7 +455,7 @@ class TestTTRecipe:
     def test_very_short_duration_near_zero_loss(self):
         tT = np.array([[1.0, 300.0]])    # 1 second — negligible diffusion
         grains = make_grains()
-        model = HeModel(grains_df=grains, tT=tT)
+        model = pyt.tT_model(grains_df=grains, tT=tT)
         fl, _ = model.step_degas(make_diff_params(), "CN", 1e-6)
         assert fl[0][0, 1] < 1e-4
 
@@ -469,8 +466,7 @@ class TestTTRecipe:
         assert np.all(np.diff(vals) >= -1e-9)
 
 
-# ── 10. log2_nodes ────────────────────────────────────────────────────────────
-
+#log2_nodes tests
 class TestLog2Nodes:
     def test_default_node_count(self):
         model = make_model()
