@@ -1898,6 +1898,7 @@ class apatite(crystal):
         
         if minimum_He < -He_profile[0] * 0.5:
             total_He = 0
+            final_damage = damage[-1]
             return total_He, final_damage, He_profile, total_He
         
         #convert He profile into a spherical function for integration
