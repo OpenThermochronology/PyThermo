@@ -58,8 +58,8 @@ class tT_path:
         default_time_step = 0.1 * start_time
         previous_time_step = default_time_step
 
-        #list of time values over which to interpolate, appended to in for loop
-        time_list = []
+        #list of time segments over which to interpolate, appended to in for loop
+        segments = []
 
         #for loop steps through each segment of tTin
         for i in range(np.size(self.__tTin, 0) - 1, 0, -1):
@@ -86,25 +86,24 @@ class tT_path:
             )
             
             #some error proofing included just in case
-            time_segment = [
-                self.__tTin[i,0] - time_step * j 
-                for j in range(number_of_steps) 
-                if self.__tTin[i,0] - time_step*j > self.__tTin[i - 1, 0]
-            ]
+            indices = np.arange(number_of_steps)
+            time_segment = self.__tTin[i,0] - time_step * indices 
+            time_segment = time_segment[time_segment > self.__tTin[i - 1, 0]]
             
+            segments.append(time_segment)
             previous_time_step = time_step
-            time_list = time_list + time_segment
 
         #add on the last time step (present day) and interpolate
-        time_list.append(0)
-        temp_out = np.interp(time_list, self.__tTin[:, 0], self.__tTin[:, 1])
+        segments.append(np.array([0.0]))
+        time_array = np.concatenate(segments)
+        temp_out = np.interp(time_array, self.__tTin[:, 0], self.__tTin[:, 1])
 
         #convert time to secs and temperature to Kelvin
-        time_array = np.array(time_list) * sec_per_myr
+        time_array = time_array * sec_per_myr
         temp_out = temp_out + 273.15
-        tT_out = np.array([time_array, temp_out])
+        tT_out = np.column_stack([time_array, temp_out])
 
-        return tT_out.transpose()
+        return tT_out
 
     def anneal(self, kinetics):
         """

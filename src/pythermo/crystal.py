@@ -470,6 +470,10 @@ class crystal:
             u_fp_n = np.zeros(nodes)
             u_lat_n = np.zeros(nodes)
 
+        #precompute r positions
+        indices = np.arange(nodes)
+        r_positions = (indices + 0.5) * r_step
+
         #setup diagonal and d (RHS vector, Ax = d)     
         diagonal = np.zeros(nodes)
         d = np.zeros(nodes)
@@ -479,6 +483,8 @@ class crystal:
         a[-1] = 0
         c = np.ones(nodes)
         c[0] = 0
+
+        A = [c, diagonal, a]
 
         #determine if production occurs within each time step
         if produce:
@@ -500,10 +506,6 @@ class crystal:
                 sub_tT_path = self.divide_tT(D_sc[i], dt_int, temp, r_step, M, initial_damp)
             else:
                 sub_tT_path = tT_path[i:i + 2, :]
-
-            #precompute r positions
-            indices = np.arange(nodes)
-            r_positions = (indices + 0.5) * r_step
 
             #perform diffusion at sub-interval time spacing
             for j in range(np.size(sub_tT_path, 0) - 1):
@@ -551,7 +553,7 @@ class crystal:
                 d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition + partition_n_plus
                 
                 #fill in the rest
-                diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                diagonal[1:-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
                 
                 #production term
                 production = all_alphas[1:-1] * f * r_positions[1:-1] * beta_sc * allow
@@ -561,8 +563,6 @@ class crystal:
                 d[1:-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[1:-1] - u_fp_n[2:] - u_fp_n[:-2] - production + partition + partition_n_plus
                 
                 #solve for fast path concentration using scipy banded solver
-                #only need to build A once
-                A = [c, diagonal, a]
                 u_fp = solve_banded((1, 1), A, d)
                 
                 #iterate within each time segment for distribution between fast path and lattice

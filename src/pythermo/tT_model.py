@@ -153,7 +153,7 @@ class tT_model:
             #get rho_r annealing and relevant tT vectors, same for all grains for a given tT path
             if 'guenthner' in grains.iloc[:, 8].values: 
                 zirc_anneal, zirc_tT = tT.guenthner_anneal()
-            if 'ketcham' in grains.iloc[:, 8].values: 
+            if 'flowers' in grains.iloc[:, 8].values: 
                 ap_anneal, ap_tT = tT.ketcham_anneal()
             
             #calculate dates for each grain
@@ -876,7 +876,7 @@ class tT_model:
                         tolerance,
                         fast_He,
                         lat_He,
-                        eject = False,  
+                        eject,  
                         produce = False,
                     )
                 elif diff_type == 'CN':
@@ -895,10 +895,12 @@ class tT_model:
                     bulk_He, total_bulk_He = diffuse_grain.CN_profile(
                         bulk_diffs, 
                         bulk_He, 
-                        eject = False, 
+                        eject, 
                         produce = False,
                         divide = True,
                     )
+                    fast_He = 0
+                    lat_He = 0
                     
 
                 #calculate fractional loss
