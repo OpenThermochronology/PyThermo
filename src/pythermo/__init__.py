@@ -3,7 +3,9 @@ Classes and methods for performing various modeling and computational tasks in t
 
 This package includes the following modules:
 
-    - .crystal      : Classes and methods for determining radiation damage levels, diffusivities, and thermochronometric dates from different mineral systems
+    - .core_solvers : Core functions that are implemented using just-in-time compilation.
+
+    - .crystal      : Classes and methods for determining radiation damage levels, diffusivities, and thermochronometric dates from different mineral systems.
 
     - .tT_path      : Methods for creating discretized time-temperature (tT) paths and performing crystal-independent radiation damage annealing.
 
@@ -13,7 +15,7 @@ This package includes the following modules:
 
 """
 
-__all__ = ['constants', 'crystal', 'tT_path', 'tT_model']
+__all__ = ['constants', 'core_solvers', 'crystal', 'tT_path', 'tT_model']
 
 from .constants import *
 from .crystal import *

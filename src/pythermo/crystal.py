@@ -22,7 +22,7 @@ from .constants import (
     gas_constant, 
     ap_density,
 )
-from scipy.linalg import solve_banded
+from .core_solvers import _CN_diffusion_core, _mp_diffusion_core
 from scipy.integrate import romb
 import warnings
 
@@ -240,7 +240,7 @@ class crystal:
             divide=False,
             ):
         """ 
-        Solves the diffusion equation with production along a 1D radial profile using the Crank-Nicoloson finite difference scheme. Assumes no flux across the center, or inner boundary, node (Neumann boundary condition) and zero concentration along the outer boundary (Dirichlet boundary condition). Production can be zeroed out by passing arrays of zeros for each of the alphe ejection arrays. Original solution and set-up for the algorithm comes from Ketcham (2005) (https://doi.org/10.2138/rmg.2005.58.11), specifically equation 21, and equations 22 and 26 for boundary conditions.
+        Wrapper that calls the core function for solving the diffusion equation with production along a 1D radial profile using the Crank-Nicoloson finite difference scheme. Assumes no flux across the center, or inner boundary, node (Neumann boundary condition) and zero concentration along the outer boundary (Dirichlet boundary condition). Original solution and set-up for the algorithm comes from Ketcham (2005) (https://doi.org/10.2138/rmg.2005.58.11), specifically equation 21, and equations 22 and 26 for boundary conditions.
         
         Parameters
         ----------
@@ -285,99 +285,26 @@ class crystal:
             The 1D radial profile of diffused He (units of atoms/g).
 
         """
-        #set up arrays for tridiagonal matrix
-        #u is the coordinate transform vector
-        #u = vr, v is the He profile, r is radius
-
-        if init_He is not None:
-            u = init_He
-        else:
-            u = np.zeros(nodes)
-
-        #setup diagonal and d (RHS vector, Ax = d)
-        #a is sub-, and c is supra-diagonal
+        #damping parameters
+        M = 100
+        initial_damp = 20
         
-        diagonal = np.zeros(nodes)
-        d = np.zeros(nodes)
-        
-        #a is sub-, and c is supra-diagonal (tridiagonal matrix solver, for instructional purposes only)
-        #a = np.ones(nodes)
-        #c = np.ones(nodes-1)
+        He_profile = _CN_diffusion_core(
+            nodes,
+            r_step,
+            tT_path,
+            np.asarray(diffs, dtype=np.float64),
+            np.asarray(aej_U238, dtype=np.float64),
+            np.asarray(aej_U235, dtype=np.float64),
+            np.asarray(aej_Th, dtype=np.float64),
+            np.asarray(aej_Sm, dtype=np.float64),
+            np.asarray(init_He, dtype=np.float64) if init_He is not None else np.zeros(nodes),
+            1.0 if produce else 0.0,
+            divide,
+            M,
+            initial_damp,
+        )
 
-        #a is sub-, and c is supra-diagonal (scipy banded matrix solver)
-        a = np.ones(nodes)
-        a[-1] = 0
-        c = np.ones(nodes)
-        c[0] = 0
-
-        #determine if production occurs within each time step
-        if produce:
-            allow = 1
-        else:
-            allow = 0
-
-        indices   = np.arange(nodes)
-        r_positions = (indices + 0.5) * r_step
-
-        #step through time from old to young
-        for i in range(np.size(tT_path, 0) - 1):
-
-            dt_int = tT_path[i, 0] - tT_path[i + 1, 0]
-            fourier = (diffs[i] * dt_int) / r_step**2
-
-            #subdivide the time step if necessary
-            if fourier > 0.5 and divide:
-                temp = (tT_path[i, 1] + tT_path[i + 1, 1]) / 2
-                M = 100
-                initial_damp = 20
-                sub_tT_path = self.divide_tT(diffs[i], dt_int, temp, r_step, M, initial_damp)
-            else:
-                sub_tT_path = tT_path[i:i + 2, :]
-
-            A = [c, diagonal, a]            
-            for j in range(np.size(sub_tT_path, 0) - 1):
-                t_old = sub_tT_path[j, 0]
-                t_young = sub_tT_path[j + 1, 0]
-                dt = t_old - t_young
-                beta = (2.0 * r_step**2) / (diffs[i] * dt)
-
-                all_alphas = (
-                8
-                * aej_U238
-                * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                + 7
-                * aej_U235
-                * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                + 6
-                * aej_Th
-                * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                + aej_Sm
-                * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-                )
-
-                #production array
-                production = all_alphas * r_positions * beta * allow
-
-                #Neumann inner boundary condition (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
-                diagonal[0] = -3.0 - beta
-                d[0] = (3.0 - beta) * u[0] - u[1] - production[0]
-
-                #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
-                diagonal[-1] = -2.0 - beta
-                d[-1] = (2.0 - beta) * u[-1] - u[-2] - production[-1]
-
-                #fill in the rest
-                diagonal[1:-1] = -2.0 - beta                   
-                d[1:-1] = (2.0 - beta) * u[1:-1] - u[2:] - u[:-2] - production[1:-1]
-                
-                #solve it using tridiaonal matrix algorithm, for instructional purposes only, u becomes u_n+1 and repeat
-                #u = self.tridiag(a, diagonal, c, d, nodes)
-                
-                #solve it using scipy banded solver, u becomes u_n+1 and repeat
-                u = solve_banded((1, 1), A, d)
-
-        #convert u to the He concentration profile
-        He_profile = u / r_positions
         return He_profile
     
     def mp_diffusion(
@@ -396,7 +323,7 @@ class crystal:
             produce=True
             ):
         """ 
-        Solves for diffusion in a crystal with multiple diffusion pathways, a fast path and a volume path, using a Crank-Nicoloson scheme. Based on the set-up of Lee and Aldama (1992) (https://doi.org/10.1016/0098-3004(92)90093-7) and their algorithm for solving equations 18a and 18b. Uses equatios from Ketcham (2005) (https://doi.org/10.2138/rmg.2005.58.11), specifically equation 21 for tridiagonal setup, and equations 22 and 26 for boundary conditions (which are Neumann and Dirichlet-type in both publications).
+        Wrapper that calls the core function for solving diffusion in a crystal with multiple diffusion pathways, a fast path and a volume path, using a Crank-Nicoloson scheme. Based on the set-up of Lee and Aldama (1992) (https://doi.org/10.1016/0098-3004(92)90093-7) and their algorithm for solving equations 18a and 18b. Adapted by Guenthner et al. (in prep) (doi pending) for a tridiagonal setup, production terms, and Neumann and Dirichlet-type boundary conditions.
 
         Parameters
         ----------
@@ -458,194 +385,35 @@ class crystal:
         kappa_2 = diff_parameters['kappa_2']
         f = diff_parameters['f']
 
-        #set up arrays for tridiagonal matrix
-        #u = vr, v is the He profile, r is radius
-        #u_fp is the fast path, and u_lat is the lattice coordinate transform vector
-        #u_fp_n and u_lat_n are previous time step vectors 
+        #damping parameters
+        M = 100
+        initial_damp = 20
 
-        if init_fast_He is not None and init_lat_He is not None:
-            u_fp_n = init_fast_He
-            u_lat_n = init_lat_He
-        else:
-            u_fp_n = np.zeros(nodes)
-            u_lat_n = np.zeros(nodes)
+        #set up initial arrays
+        init_fast = np.asarray(init_fast_He, dtype=np.float64) if init_fast_He is not None else np.zeros(nodes)
+        init_lat  = np.asarray(init_lat_He, dtype=np.float64) if init_lat_He is not None else np.zeros(nodes)
 
-        #precompute r positions
-        indices = np.arange(nodes)
-        r_positions = (indices + 0.5) * r_step
+        bulk_He_profile, fast_He_profile, lat_He_profile = _mp_diffusion_core(
+                nodes,
+                r_step,
+                tT_path,
+                D_sc,
+                D_v,
+                kappa_1,
+                kappa_2,
+                f,
+                tolerance,
+                np.asarray(aej_U238, dtype=np.float64),
+                np.asarray(aej_U235, dtype=np.float64),
+                np.asarray(aej_Th, dtype=np.float64),
+                np.asarray(aej_Sm, dtype=np.float64),
+                init_fast,
+                init_lat,
+                1.0 if produce else 0.0,
+                M,
+                initial_damp,
+        )
 
-        #setup diagonal and d (RHS vector, Ax = d)     
-        diagonal = np.zeros(nodes)
-        d = np.zeros(nodes)
-        
-        #a is sub-, and c is supra-diagonal
-        a = np.ones(nodes)
-        a[-1] = 0
-        c = np.ones(nodes)
-        c[0] = 0
-
-        A = [c, diagonal, a]
-
-        #determine if production occurs within each time step
-        if produce:
-            allow = 1
-        else:
-            allow = 0
-        
-        #step through time from old to young
-        for i in range(np.size(tT_path, 0) - 1):
-            
-            dt_int = tT_path[i, 0] - tT_path[i + 1, 0]
-            fourier_sc = (D_sc[i] * dt_int) / r_step**2
-
-            #subdivide the time step if necessary
-            if fourier_sc > 0.5:
-                temp = (tT_path[i, 1] + tT_path[i + 1, 1]) / 2
-                M = 100
-                initial_damp = 20
-                sub_tT_path = self.divide_tT(D_sc[i], dt_int, temp, r_step, M, initial_damp)
-            else:
-                sub_tT_path = tT_path[i:i + 2, :]
-
-            #perform diffusion at sub-interval time spacing
-            for j in range(np.size(sub_tT_path, 0) - 1):
-                t_old = sub_tT_path[j, 0]
-                t_young = sub_tT_path[j + 1, 0]
-                dt = t_old - t_young 
-                beta_sc = (2.0 * r_step**2) / (D_sc[i] * dt)
-                beta_v = (2.0 * r_step**2) / (D_v[i] * dt)
-
-                #initial guess at each sub-interval of u_lat (use previous time step)
-                u_lat = u_lat_n
-
-                #create alpha production array
-                all_alphas = (
-                            8
-                            * aej_U238
-                            * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young)) 
-                            + 7
-                            * aej_U235
-                            * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young)) 
-                            + 6
-                            * aej_Th
-                            * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young)) 
-                            + aej_Sm
-                            * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
-                        )
-
-                #generate RHS vector for fast path concentration from initial u_lat guess
-                #Neumann inner BC (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
-                #production term for 1st node
-                production = all_alphas[0] * f * 0.5 * r_step * beta_sc * allow
-                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[0]
-                partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
-
-                diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition + partition_n_plus
-                
-                #Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
-                #production term for last node
-                production = all_alphas[-1] * f * (nodes - 0.5) * r_step * beta_sc * allow
-                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
-                partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
- 
-                diagonal[-1]= -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition + partition_n_plus
-                
-                #fill in the rest
-                diagonal[1:-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                
-                #production term
-                production = all_alphas[1:-1] * f * r_positions[1:-1] * beta_sc * allow
-                partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[1:-1]
-                partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[1:-1]
-                
-                d[1:-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[1:-1] - u_fp_n[2:] - u_fp_n[:-2] - production + partition + partition_n_plus
-                
-                #solve for fast path concentration using scipy banded solver
-                u_fp = solve_banded((1, 1), A, d)
-                
-                #iterate within each time segment for distribution between fast path and lattice
-                diff_max = 1.0
-                counter = 0
-                
-                while diff_max > tolerance and counter < 50:
-
-                    #for comparison with updated values in diff_max
-                    u_fp_old = u_fp
-                    u_lat_old = u_lat
-                                     
-                    #generate RHS vector for lattice concentration from fast path solution
-                    #Neumann inner BC
-                    production = all_alphas[0] * (1 - f) * 0.5 * r_step * beta_v * allow
-                    partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[0]
-                    partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[0]
-                    
-                    diagonal[0] = -3.0 - beta_v + beta_v * 0.5 * dt * kappa_2
-                    d[0] = (3.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[0] - u_lat_n[1] - production - partition - partition_n_plus
-
-                    #Dirichlet outer BC
-                    production = all_alphas[-1] * (1 - f) * (nodes - 0.5) * r_step * beta_v * allow
-                    partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[-1]
-                    partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[-1]
-
-                    diagonal[-1] = -2.0 - beta_v + beta_v * 0.5 * dt * kappa_2
-                    d[-1] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[-1] - u_lat_n[-2] - production - partition - partition_n_plus
-                    
-                    #fill in the rest
-                    diagonal[1:nodes-1] = -2.0 - beta_v + beta_v * 0.5 * dt * kappa_2
-                    production = all_alphas[1:-1] * (1 - f) * r_positions[1:-1] * beta_v * allow
-                    partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[1:-1]
-                    partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[1:-1]
-                    d[1:-1] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[1:-1] - u_lat_n[2:] - u_lat_n[:-2] - production - partition - partition_n_plus
-                        
-                    #solve for lattice concentration using scipy banded solver
-                    u_lat = solve_banded((1, 1), A, d)
-                    
-                    #generate RHS vector again for fast path concentration from lattice solution
-                    #Neumann inner BC
-                    production = all_alphas[0] * f * 0.5 * r_step * beta_sc * allow
-                    partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[0]
-                    partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[0]
-
-                    diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                    d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition + partition_n_plus
-                    
-                    #Dirichlet outer BC
-                    production = all_alphas[-1] * f * (nodes - 0.5) * r_step * beta_sc * allow
-                    partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
-                    partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
-
-                    diagonal[-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                    d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition + partition_n_plus
-
-                    #fill in the rest
-                    diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                    production = all_alphas[1:-1] * f * r_positions[1:-1] * beta_sc * allow
-                    partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[1:-1]
-                    partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[1:-1]
-
-                    d[1:-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[1:-1] - u_fp_n[2:] - u_fp_n[:-2] - production + partition + partition_n_plus
-
-                    #solve for fast path concentration once more using scipy banded solver
-                    u_fp = solve_banded((1, 1), A, d)
-                    
-                    #determine diff_max to compare for next iteration of while loop
-                    xi_max = np.max(np.abs(u_fp - u_fp_old))
-                    omega_max = np.max(np.abs(u_lat - u_lat_old))
-                    diff_max = max(xi_max, omega_max)
-                    counter = counter + 1
-                
-                #update u_n vectors and move to the next sub-interval time step
-                u_fp_n = u_fp
-                u_lat_n = u_lat  
-        
-        #convert each u profile to a He concentration profile
-        r_vals = (np.arange(nodes) + 0.5) * r_step
-        fast_He_profile = u_fp_n / r_vals
-        lat_He_profile  = u_lat_n / r_vals
-        bulk_He_profile = (u_fp_n + u_lat_n) / r_vals
-        
         return bulk_He_profile, fast_He_profile, lat_He_profile
     
     def divide_tT(self, D, dt, temp, r_step, M, initial_damp):
@@ -688,8 +456,7 @@ class crystal:
         if dt_int > initial_damp + M:
             n_steps = int(dt / dt_int) + 1
             sub_tT = np.zeros((n_steps, 2))
-            for i in range(n_steps):
-                sub_tT[i, 0] = dt - i * dt_int
+            sub_tT[:, 0] = dt - np.arange(n_steps) * dt_int
             sub_tT[:, 1] = temp
             return sub_tT
 
@@ -715,14 +482,14 @@ class crystal:
         
         sub_tT = np.zeros((expansion_steps,2))
         sub_tT[0,0] = dt
-        for i in range(1, initial_damp):
-            sub_tT[i,0] = dt -  (dt_int + i * dt_int)
-        tau_1 = sub_tT[i,0] * (beta - 1) / (beta**M - 1)
+        i_vals = np.arange(1, initial_damp)
+        sub_tT[1:initial_damp, 0] = dt -  dt_int * (1 + i_vals)
+        tau_1 = sub_tT[initial_damp - 1, 0] * (beta - 1) / (beta**M - 1)
 
         delta_t = 0
-        for i in range(M-1):
-            delta_t = delta_t + beta**i * tau_1
-            sub_tT[initial_damp + i,0] = sub_tT[initial_damp-1,0] - delta_t
+        i_vals = np.arange(M - 1)
+        delta_t = np.cumsum(beta**i_vals) * tau_1
+        sub_tT[initial_damp:initial_damp + M - 1,0] = sub_tT[initial_damp - 1, 0] - delta_t
 
         #add on temperatures
         sub_tT[:,1] = temp
@@ -798,58 +565,9 @@ class crystal:
         
         return corrected_date
 
-    def tridiag(self, a, diagonal, c, d, nodes):
-        """ 
-        Implements the tridiagonal matrix algorithm for the CN diffusion solver. Not called in CN diffusion. Here for instructional purposes. Adapted for python from Numerical Recipes, section 2.4, Press et al. (2007) ISBN: 978-0-521-88068-8
-
-        Parameters
-        ----------
-
-        a: 1D array of floats
-            Values along the subdiagonal of the tridiagonal matrix
-
-        diagonal: 1D array of floats
-            Values along the diagonal of the tridiagonal matrix
-        
-        c: 1D array of floats
-            Values along the supradiagonal of the tridiagonal matrix
-
-        d: 1D array of floats
-            Values on the right-hand side of equation
-
-        nodes: int
-            Number of nodes in the diffusion solver (tridiagonal matrix is n x n where n = nodes)
-
-        Returns
-        -------
-
-        x: 1D array of floats
-            The inverted matrix (vector)
-
-        """
-
-        #gam and x 
-        gam = np.zeros(nodes)
-        x = np.zeros(nodes)
-        
-        #perform forward sweep
-        bet = diagonal[0]
-        x[0] = d[0] / bet
-
-        for i in range(1, nodes):
-            gam[i] = c[i - 1] / bet
-            bet = diagonal[i] - a[i] * gam[i]
-            x[i] = (d[i] - a[i] * x[i - 1]) / bet 
-
-        #back substitute
-        for j in range(nodes - 2, -1, -1):
-            x[j] = x[j] - gam[j + 1] * x[j + 1]
-
-        return x
-
     def romberg(self, integral, a, b, log2_nodes, r_step):
         """ 
-        Implements Romberg's method for using the extended trapezoidal rule. Not called in CN diffusion. Here for instructional purposes. Adapated from Numerical Recipes, sections 4.2 and 4.3, Press et al. (2007) ISBN: 978-0-521-88068-8. Works on a vector of 2**n + 1 equally spaced samples of a function.
+        Implements Romberg's method for using the extended trapezoidal rule. Not called, here for instructional purposes. Adapated from Numerical Recipes, sections 4.2 and 4.3, Press et al. (2007) ISBN: 978-0-521-88068-8. Works on a vector of 2**n + 1 equally spaced samples of a function.
 
         Parameters
         ----------
@@ -922,7 +640,7 @@ class crystal:
 
     def poly_interp(self, xa, ya, jl, x=0):
         """ 
-        Polynomial interpolation method (Neville's algorithm), adapted from Numerical Recipes section 3.2, Press et al. (2007) ISBN: 978-0-521-88068-8. Given a starting value, x, two vectors of x values and f(x) solutions, use polynomials up to order jl-1 to interpolate and accumulate the rest of the y values. Not called in CN diffusion. Here for instructional purposes.
+        Polynomial interpolation method (Neville's algorithm), adapted from Numerical Recipes section 3.2, Press et al. (2007) ISBN: 978-0-521-88068-8. Given a starting value, x, two vectors of x values and f(x) solutions, use polynomials up to order jl-1 to interpolate and accumulate the rest of the y values. Not called, here for instructional purposes.
 
         Parameters
         ----------

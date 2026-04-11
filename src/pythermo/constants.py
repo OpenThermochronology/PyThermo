@@ -1,7 +1,7 @@
 """ 
 constants.py
 
-Universal constants used by files crystals.py, tT_path.py, and tT_model.py 
+Universal constants used by files core_solvers.py, crystals.py, tT_path.py, and tT_model.py 
 
 """
 import numpy as np

@@ -5,6 +5,7 @@ Contains one class 'tT_path' with methods for interpolating and discretizing tim
 
 """
 from .constants import np, sec_per_myr
+from .core_solvers import _teq_rho_r
 
 class tT_path:
     def __init__(self, tTin, temp_precision=5, rate_acceleration=1.5):
@@ -246,51 +247,15 @@ class tT_path:
             relevant_tracks - 1, present_old_track - oldest_track : relevant_tracks
         ] = oldest_track_list
 
-        #fill in the rest
-        for i in range(relevant_tracks - 2, -1, -1):
-            t_eq = 0.0
-            temp_mean = np.log(2 / (interp_tT[i, 1] + interp_tT[i + 1, 1]))
-            
-            for j in range(i, -1, -1):
-                time_step = interp_tT[j, 0] - interp_tT[j + 1, 0] + t_eq
-                
-                #just in case there's a zero time step
-                if time_step <= 0: 
-                    continue
-                
-                r = (
-                    C0 + C1 * ((np.log(time_step) - C2) / (temp_mean - C3))
-                ) ** (1 / alpha) + 1
-                
-                if r <= 0:
-                    r = 0.0
-                else:
-                    r = 1 / r
-
-                #convert to reduced density (mineral type dependent)
-                if r <= total_anneal:
-                    rho_r_array[i, j] = 0
-                    break
-                else:
-                    if mineral_type == 'apatite':
-                        rc_lr = ((r - rmr0) / (1 - rmr0)) ** kappa
-                        if rc_lr >= 0.765:
-                            rho_r_array[i, j] = 1.6 * rc_lr -0.6
-                        else:
-                            rho_r_array[i, j] = 9.205 * rc_lr**2 - 9.157 * rc_lr + 2.269
-                        
-                    elif mineral_type == 'zircon':
-                        rho_r_array[i, j] = 1.25 * (r - 0.2)
-                
-                #calculate t_eq, prevent subzero indexing
-                if j == 0:
-                    break
-                elif(r<1):
-                    temp_mean = np.log(2 / (interp_tT[j - 1, 1] + interp_tT[j, 1]))
-                    t_eq = np.exp(
-                        C2 + (temp_mean - C3) * (((1 / r) - 1) ** alpha - C0) / C1
-                    )
-
+        #fill in the rest with call to numba method
+        is_apatite = mineral_type == 'apatite'
+        rho_r_array = _teq_rho_r(
+            rho_r_array, interp_tT[:, 0], interp_tT[:, 1],
+            C0, C1, C2, C3, alpha,
+            rmr0 or 0.0, kappa or 0.0,
+            is_apatite, total_anneal, relevant_tracks
+        )
+        
         return rho_r_array, interp_tT
 
     def guenthner_anneal(self):
