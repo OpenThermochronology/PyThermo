@@ -1,10 +1,9 @@
 # PyThermo
 
 [![DOI](osf_io_BNUVZ.svg)](https://doi.org/10.17605/OSF.IO/BNUVZ)
-[![CI][ci-img]][ci-url]
-[![PyPI - Version][pypi-img]][pypi-url]
+[CI][ci-url]
+[PyPI - Version][pypi-url]
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/OpenThermochronology/PyThermo/HEAD?urlpath=%2Fdoc%2Ftree%2Fexamples%2Ftemplate.ipynb)
-
 
 A set of classes and methods for performing various modeling and computational tasks in the field of low-temperature thermochronology. The current focus is on forward modeling of apatite and zircon (U-Th)/He data using various diffusion and damage annealing kinetic models. Future releases will expand upon the available kinetic models and mineral systems, and introduce additional methods, such as forward modeling of Arrhenius relationships.
 
@@ -19,6 +18,7 @@ The source code consists of three separate classes and accompanying methods and/
 If you've installed Python through the open data science platform [Anaconda](https://www.anaconda.com/download), you should be all set. In detail, the specific libraries you'll need to have installed are:
 
 * Numpy
+* Numba
 * Scipy
 * Matplotlib
 * Pandas
