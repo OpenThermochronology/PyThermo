@@ -25,22 +25,22 @@ class tT_path:
             Default maximum temperature acceleration allowed between time points. Smaller numbers yield better precision in the diffusion solver (and date) at the cost of increased run-time Default is 1.5.
 
         """
-        self.__tTin = tTin
+        self._tTin = tTin
 
         #in degrees C
-        self.__precision = temp_precision
+        self._precision = temp_precision
 
         #in millions of years
-        self.__acceleration = rate_acceleration
+        self._acceleration = rate_acceleration
 
     def get_tTin(self):
-        return self.__tTin
+        return self._tTin
     
     def get_precision(self):
-        return self.__precision
+        return self._precision
     
     def get_acceleration(self):
-        return self.__acceleration
+        return self._acceleration
 
     def tT_interpolate(self):
         """
@@ -55,7 +55,7 @@ class tT_path:
         """
         
         #default time step is set to 1% of total length of time
-        start_time = self.__tTin[-1,0]
+        start_time = self._tTin[-1,0]
         default_time_step = 0.1 * start_time
         previous_time_step = default_time_step
 
@@ -63,33 +63,33 @@ class tT_path:
         segments = []
 
         #for loop steps through each segment of tTin
-        for i in range(np.size(self.__tTin, 0) - 1, 0, -1):
+        for i in range(np.size(self._tTin, 0) - 1, 0, -1):
             #rate of temperature change (oC/m.y.)
-            rate=(self.__tTin[i,1] - self.__tTin[i - 1, 1]) / (
-                self.__tTin[i, 0] - self.__tTin[i - 1, 0]
+            rate=(self._tTin[i,1] - self._tTin[i - 1, 1]) / (
+                self._tTin[i, 0] - self._tTin[i - 1, 0]
             )
             abs_rate = abs(rate)
             temp_per_time_step = abs_rate * default_time_step
             
-            if temp_per_time_step <= self.__precision:
+            if temp_per_time_step <= self._precision:
                 current_default_time_step = default_time_step
             else:
-                current_default_time_step = self.__precision/abs_rate
+                current_default_time_step = self._precision/abs_rate
 
             time_step = current_default_time_step
-            if time_step > previous_time_step * self.__acceleration:
-                time_step = previous_time_step * self.__acceleration
+            if time_step > previous_time_step * self._acceleration:
+                time_step = previous_time_step * self._acceleration
             
             #conversion of number of steps to an int rounds down
             #results in some cases to a relatively small amount of round off error 
             number_of_steps = int(
-                (self.__tTin[i, 0] - self.__tTin[i - 1, 0]) / time_step
+                (self._tTin[i, 0] - self._tTin[i - 1, 0]) / time_step
             )
             
             #some error proofing included just in case
             indices = np.arange(number_of_steps)
-            time_segment = self.__tTin[i,0] - time_step * indices 
-            time_segment = time_segment[time_segment > self.__tTin[i - 1, 0]]
+            time_segment = self._tTin[i,0] - time_step * indices 
+            time_segment = time_segment[time_segment > self._tTin[i - 1, 0]]
             
             segments.append(time_segment)
             previous_time_step = time_step
@@ -97,7 +97,7 @@ class tT_path:
         #add on the last time step (present day) and interpolate
         segments.append(np.array([0.0]))
         time_array = np.concatenate(segments)
-        temp_out = np.interp(time_array, self.__tTin[:, 0], self.__tTin[:, 1])
+        temp_out = np.interp(time_array, self._tTin[:, 0], self._tTin[:, 1])
 
         #convert time to secs and temperature to Kelvin
         time_array = time_array * sec_per_myr

@@ -46,29 +46,29 @@ class tT_model:
             Default minimal spacing of temperature steps in the interpolated tT path. Smaller numbers yield better precision in the diffusion solver (and date) at the cost of increased run-time. Default is 5.
         
         """
-        self.__grain_in = grain_in
-        self.__tT_in = tT_in
-        self.__obs_data = obs_data
-        self.__temp_precision = temp_precision
-        self.__model_data = None
+        self._grain_in = grain_in
+        self._tT_in = tT_in
+        self._obs_data = obs_data
+        self._temp_precision = temp_precision
+        self._model_data = None
     
     def get_grain_in(self):
-        return self.__grain_in
+        return self._grain_in
     
     def get_tT_in(self):
-        return self.__tT_in
+        return self._tT_in
     
     def get_obs_data(self):
-        return self.__obs_data
+        return self._obs_data
     
     def get_temp_precision(self):
-        return self.__temp_precision
+        return self._temp_precision
     
     def get_model_data(self):
-        return self.__model_data
+        return self._model_data
     
     def set_model_data(self, model_data):
-        self.__model_data = model_data
+        self._model_data = model_data
 
     def forward(self, comp_type='size', model_num=2, std_grain=0, log2_nodes=8, colormap='default'):
         """ 
@@ -100,9 +100,9 @@ class tT_model:
             Figure object containing tT paths and correspondind date-eU plots.
 
         """
-        tT_in = self.__tT_in
-        grains = self.__grain_in
-        obs_data = self.__obs_data
+        tT_in = self._tT_in
+        grains = self._grain_in
+        obs_data = self._obs_data
         
         #don't assume that everyone will have the same column or row data frame names, use indexing throughout
         num_grains = grains.shape[0]
@@ -144,11 +144,8 @@ class tT_model:
             #find the oldest time, use only that splice of the t and T columns
             non_zero = np.argwhere(tT_in[:, i])
             last_time = non_zero[-1][0]
-            
-            #interpolate tT path
             tT_slice = tT_in[: last_time + 1, i : i + 2]
-            tT = tT_path(tT_slice, self.__temp_precision)
-            tT.tT_interpolate()
+            tT = tT_path(tT_slice, self._temp_precision)
 
             #get rho_r annealing and relevant tT vectors, same for all grains for a given tT path
             if 'guenthner' in grains.iloc[:, 8].values: 
@@ -446,8 +443,8 @@ class tT_model:
             Figure object containing tT and date-eU plots to be saved. Keeps it basic, and allows for customization elsewhere.
 
         """
-        tT_in = self.__tT_in
-        obs_data = self.__obs_data
+        tT_in = self._tT_in
+        obs_data = self._obs_data
 
         #set up the figure with 2 subplots: time_temp  and date_eU
         dateeU_fig, (time_temp, date_eU) = plt.subplots(2, 1, figsize=[10, 10], dpi=600)
@@ -662,8 +659,8 @@ class tT_model:
             A list of 3 column arrays of bulk He, fast path He, and lattice He concentration profile (in atoms per volume, base of 1/(4/3 * Pi)) for each grain input. If CN diffusion algorithm is used, only the bulk He column contains relevant data.       
         
         '''
-        tT_in = self.__tT_in
-        grains = self.__grain_in
+        tT_in = self._tT_in
+        grains = self._grain_in
 
 
         #constants for the e_rho_s calculation, as defined in Flowers et al. (2009)
@@ -678,7 +675,10 @@ class tT_model:
         profile_data = []
 
         for i in range(len(grains.index)):
-            # unpack data frame, size in microns, age in Ma 
+            # unpack data frame, size in microns, age in Ma
+            grain_type = grains.iloc[i, 0]
+            if grain_type not in ('apatite', 'zircon'):
+                return None 
             dose_age = grains.iloc[i, 1]
             size  = grains.iloc[i, 3] 
             U_ppm = grains.iloc[i, 4]
@@ -734,7 +734,7 @@ class tT_model:
             f_a = 1 - ((1 + B_a * dose) * np.exp(-(B_a * dose)))**n
             diff_params['f'] = f_a              
 
-            if grains.iloc[i, 0] == 'apatite':
+            if grain_type == 'apatite':
                 model_grain = apatite(
                                 size, 
                                 log2_nodes, 
@@ -744,7 +744,7 @@ class tT_model:
                                 Th_ppm, 
                                 Sm_ppm,
                             )    
-            elif grains.iloc[i, 0] == 'zircon':
+            elif grain_type == 'zircon':
                 model_grain = zircon(
                                 size, 
                                 log2_nodes, 
@@ -760,15 +760,11 @@ class tT_model:
             #create the initial profile, if no profile provided
             if init_profile is None:
                 #create production lists that consider (or don't) alpha ejection
-                if eject and grains.iloc[i, 0] == 'zircon':
-                    aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.zircon_alpha_ejection()
-                elif eject and grains.iloc[i, 0] == 'apatite':
-                    aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.apatite_alpha_ejection()
-                elif grains.iloc[i, 0] == 'zircon':
-                    aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.zircon_no_ejection()
-                elif grains.iloc[i, 0] == 'apatite':
-                    aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = model_grain.apatite_no_ejection()
-                
+                if eject:
+                    aej_U238, aej_U235, aej_Th, aej_Sm, _ = model_grain.get_aej()
+                else:
+                    aej_U238, aej_U235, aej_Th, aej_Sm, _ = model_grain.get_no_aej()
+                                
                 init_age = dose_age * sec_per_myr
 
                 init_He = (
@@ -802,13 +798,7 @@ class tT_model:
 
             #calculate the total amount of initial He, accounting for alpha ejected profiles
             #convert He profile into a spherical function for integration
-            r_indices = np.arange(model_grain.get_nodes())
-            r_vals = (0.5 + r_indices) * model_grain.get_r_step()
-            integral = init_He * 4 * np.pi * r_vals**2
-            total_init_He = romb(integral, model_grain.get_r_step())
-            
-            #units in atoms per volume (base of 1/(4/3 * Pi))
-            total_init_He = total_init_He / ((4 / 3) * np.pi)
+            _, total_init_He = model_grain._integrate_profile(init_He)
             frac_loss_pre = 0
 
             #establish arrays to store frac loss and profile data
@@ -819,43 +809,23 @@ class tT_model:
             fast_He = init_fast_He
             lat_He = init_lat_He
             bulk_He = init_He
-                
+
+            #create a 2 row time-step array for each segment of the step-heating recipe
+            diff_tT = np.zeros((2, 2))
+
             #calculate fractional loss for each segment of the step-heating recipe
             for j in range(np.size(tT_in, 0)):             
                 
                 time = tT_in[j, 0]
                 temp = tT_in[j, 1]
 
-                #create a 2 row time-step array for each segment of the step-heating recipe
                 #convert temp in Celsius to temp in Kelvin
-                diff_tT = np.array(
-                    [[time, temp + 273.15], [0, temp + 273.15]]
-                )
+                diff_tT[0, 0] = time
+                diff_tT[0, 1] = temp + 273.15
+                diff_tT[1, 1] = temp + 273.15
 
-                #create a grain that will undergo diffusion within each step-heating segment
-                if grains.iloc[i, 0] == 'apatite':
-                    diffuse_grain = apatite(
-                                    size, 
-                                    log2_nodes, 
-                                    diff_tT, 
-                                    dam_model, 
-                                    U_ppm, 
-                                    Th_ppm, 
-                                    Sm_ppm,
-                                )    
-                elif grains.iloc[i, 0] == 'zircon':
-                    diffuse_grain = zircon(
-                                    size, 
-                                    log2_nodes, 
-                                    diff_tT, 
-                                    dam_model, 
-                                    U_ppm, 
-                                    Th_ppm, 
-                                    Sm_ppm,
-                                )
-                else:
-                    return None
-                
+                model_grain.set_relevant_tT(diff_tT)
+
                 #set diffusion model, 'MP' for multi-path, 'CN' for simple Crank-Nicolson
                 if diff_type == 'MP':
 
@@ -865,13 +835,13 @@ class tT_model:
                         lat_diffs = np.array([grain_diffs[j, 1]])
                         bulk_diffs = np.array([grain_diffs[j, 2]])
                     else:
-                        fast_diffs, lat_diffs, bulk_diffs = diffuse_grain.mp_diffs([dose])
+                        fast_diffs, lat_diffs, bulk_diffs = model_grain.mp_diffs([dose])
 
                     diff_params['D_sc'] = fast_diffs
                     diff_params['D_v'] = lat_diffs
 
                     #perform multi-path diffusion and get the various diffusion profiles
-                    bulk_He, fast_He, lat_He, total_bulk_He = diffuse_grain.mp_profile(
+                    bulk_He, fast_He, lat_He, total_bulk_He = model_grain.mp_profile(
                         diff_params, 
                         tolerance,
                         fast_He,
@@ -883,16 +853,16 @@ class tT_model:
 
                     #determine diffusivities for diffused grain
                     if diff_model == 'guenthner':
-                        bulk_diffs = diffuse_grain.guenthner_diffs([dose])
+                        bulk_diffs = model_grain.guenthner_diffs([dose])
                     elif diff_model == 'mp_diffusion':
-                        bulk_diffs = diffuse_grain.mp_diffs([dose])[2]
+                        bulk_diffs = model_grain.mp_diffs([dose])[2]
                     elif diff_model == 'flowers':
-                        bulk_diffs = diffuse_grain.flowers_diffs([e_rho_s])
+                        bulk_diffs = model_grain.flowers_diffs([e_rho_s])
                     else:
                         return None
                     
                     #perform CN diffusion and get the diffusion profile
-                    bulk_He, total_bulk_He = diffuse_grain.CN_profile(
+                    bulk_He, total_bulk_He = model_grain.CN_profile(
                         bulk_diffs, 
                         bulk_He, 
                         eject, 
@@ -902,7 +872,6 @@ class tT_model:
                     fast_He = 0
                     lat_He = 0
                     
-
                 #calculate fractional loss
                 frac_loss_bulk =  1 - total_bulk_He/total_init_He                
                 

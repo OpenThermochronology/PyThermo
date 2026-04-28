@@ -106,7 +106,7 @@ class crystal:
         mask_Sm = r_pos >= (radius - as_Sm)
 
         #safe division, only divides where mask is true
-        #still encounter RuntimeWarning because of the - r_pos... but these get discarded anyway with the mask, ignore these
+        #still encounter RuntimeWarning because of the - r_pos term, but these get discarded anyway with the mask so can ignore them
         #U238
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
@@ -565,153 +565,32 @@ class crystal:
         
         return corrected_date
 
-    def romberg(self, integral, a, b, log2_nodes, r_step):
-        """ 
-        Implements Romberg's method for using the extended trapezoidal rule. Not called, here for instructional purposes. Adapated from Numerical Recipes, sections 4.2 and 4.3, Press et al. (2007) ISBN: 978-0-521-88068-8. Works on a vector of 2**n + 1 equally spaced samples of a function.
+    def _integrate_profile(self, bulk_He_profile):
+        """
+        Private helper function that checks for zero helium concentration, then uses Romberg integration to calculate total helium in the bulk grain.
 
         Parameters
         ----------
 
-        integral: 1D array or list of floats
-            The "function" to integrate over, where the array index corresponds to each x value in f(x)
-
-        a: float
-            Starting position of integration, hardwired here to correspond to the postion of the first index in integral
-        
-        b: float
-            End position of integration, hardwired here to correspond to the position of the last index in integral
-                
-        log2_nodes: int
-            Value of log base 2 of nodes
-        
-        r_step: float
-            Grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
+        bulk_He_profile: 1D array of floats
+            Radial profile of diffused He in the bulk grain
 
         Returns
         -------
 
-        total_He: float
-            The total amount of integrated helium in the crystal sphere
-
+        bulk_He_profile: 1D array of floats
+            Radial profile, zeroed out if concentration went negative
+        
+        total_bulk_He: float
+            Total helium in atoms per spherical volume (base of 1/(4/3 * Pi))
         """
-        
-        #highest node *index*, NOT total number of nodes (2**log2_nodes + 1) as used in other functions 
-        nodes = 2**log2_nodes
+        if np.min(bulk_He_profile) < -bulk_He_profile[0] * 0.5:
+            return np.zeros_like(bulk_He_profile), 0.0
 
-        #store successive trapezoidal approximations in s and their relative step sizes in h
-        h = np.zeros(log2_nodes + 1)
-        s = np.zeros(log2_nodes + 1)
+        integral = bulk_He_profile * 4 * np.pi * self._r_vals**2
+        total_bulk_He = romb(integral, self._r_step) / ((4/3) * np.pi)
 
-        h[0] = 1.0
-        s[0] = 0.5 * (b - a) * (integral[0] + integral[-1])
-        
-        it = 1
-        spacing = nodes // 2
-        half_way = nodes // 2
-        
-        #main trapezoidal rule, successive "calls" are made here by for loop construction
-        for i in range(1, log2_nodes + 1):
-            sum = 0.0
-            for j in range(half_way, nodes, spacing):
-                sum = sum + integral[j]
-            
-            s[i] = 0.5 * (s[i - 1] + (b - a) * sum / it)
-            it = it * 2
-
-            #get area under curve at successive divisions (1/2, then 1/4, 3/4, then 1/8, 3/8, 5/8, 7/8, etc.)
-            half_way = half_way // 2
-            if i > 1:
-                spacing = spacing // 2
-
-            h[i] = 0.25 * h[i - 1]
-        
-        #extrapolate the refinements to zero stepsize using polynomial interpolation
-        total_He = self.poly_interp(h, s, 5)
-
-        #add in helium at the center of the sphere, which is a half-node spaced before the 0th index, NR equation 4.1.10
-        total_He = total_He + 0.5 * r_step * (
-            integral[0] * 55.0 / 24.0 
-            - integral[1] * 59.0 / 24.0 
-            + integral[2] * 37.0 / 24.0 
-            - integral[3] * 9.0 / 24.0
-        )
-    
-        return total_He
-
-    def poly_interp(self, xa, ya, jl, x=0):
-        """ 
-        Polynomial interpolation method (Neville's algorithm), adapted from Numerical Recipes section 3.2, Press et al. (2007) ISBN: 978-0-521-88068-8. Given a starting value, x, two vectors of x values and f(x) solutions, use polynomials up to order jl-1 to interpolate and accumulate the rest of the y values. Not called, here for instructional purposes.
-
-        Parameters
-        ----------
-
-        xa: 1D array of floats
-            Vector of x values
-        
-        ya: 1D array of floats
-            Vector of y = f(x) solutions
-
-        jl: int
-            Polynomial order plus one for interpolation
-
-        x: optional int
-            Starting value for the interpolation, default is 0
-
-        Returns
-        -------
-
-        y: float
-            Value of y, accumulated over course through the tableau
-        
-        """
-        #set up the tableau of c's and d's 
-        c = np.zeros(jl)
-        d = np.zeros(jl)
-
-        dif = abs(x - xa[0])
-        #find the index ns of the closest table entry
-        for i in range(jl):
-            dift = abs(x - xa[i])
-            if dift < dif:
-                ns = i
-                dif = dift
-            
-            c[i] = ya[i]
-            d[i] = ya[i]
-        ns = ns - 1
-
-        #initial approximation of y
-        y = ya[ns]
-
-        #now loop  over the c's and d's for each column of the tableau
-        for m in range(1, jl):
-            for i in range(jl - m):
-                ho = xa[i] - x
-                hp = xa[i + m] - x
-                w = c[i + 1] - d[i]
-                den = ho - hp
-
-                #this error can occur only if two input xa's are indentical (to within roundoff)
-                try:
-                    den = w / den
-                except ZeroDivisionError:
-                    print('Error in poly_interp: two values of xa were identical')
-
-                #update the c's and d's
-                d[i] = hp * den
-                c[i] = ho * den
-            
-            #decide on which path (c or d) to take through the tableau, take the most "straight-line" route
-            if 2 * ns < jl - m:
-                dy = c[ns + 1]
-            else:
-                ns = ns - 1
-                dy = d[ns]
-            
-            #last dy added could be returned as the error 
-            y = y + dy
-                
-        return y
+        return bulk_He_profile, total_bulk_He
 
 class zircon(crystal):
     def __init__(
@@ -746,63 +625,80 @@ class zircon(crystal):
     
         """
         super().__init__()
-        self.__radius = radius
-        self.__log2_nodes = log2_nodes
-        self.__nodes = 2**log2_nodes + 1
+        self._radius = radius
+        self._log2_nodes = log2_nodes
+        self._nodes = 2**log2_nodes + 1
         #grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
-        self.__r_step = radius / (self.__nodes + 0.5)
-        self.__U_ppm = U_ppm
-        self.__Th_ppm = Th_ppm
-        self.__Sm_ppm = Sm_ppm
-        self.__relevant_tT = relevant_tT
-        self.__rho_r_array = rho_r_array
+        self._r_step = radius / (self._nodes + 0.5)
+        self._r_vals = (np.arange(self._nodes) + 0.5) * self._r_step
+        self._U_ppm = U_ppm
+        self._Th_ppm = Th_ppm
+        self._Sm_ppm = Sm_ppm
+        self._relevant_tT = relevant_tT
+        self._rho_r_array = rho_r_array
+
+        #compute alpha ejection profiles
+        self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm,self._corr_factors = self.zircon_alpha_ejection()
+        self._no_aej_U238, self._no_aej_U235, self._no_aej_Th, self._no_aej_Sm, self._no_corr_factors = self.zircon_no_ejection()
 
     def get_radius(self):
-        return self.__radius
+        return self._radius
     
     def get_log2_nodes(self):
-        return self.__log2_nodes
+        return self._log2_nodes
     
     def get_nodes(self):
-        return self.__nodes
+        return self._nodes
     
     def get_r_step(self):
-        return self.__r_step
+        return self._r_step
     
     def get_U_ppm(self):
-        return self.__U_ppm
+        return self._U_ppm
     
     def get_Th_ppm(self):
-        return self.__Th_ppm
+        return self._Th_ppm
     
     def get_Sm_ppm(self):
-        return self.__Sm_ppm
+        return self._Sm_ppm
     
     def get_relevant_tT(self):
-        return self.__relevant_tT
+        return self._relevant_tT
     
     def get_rho_r_array(self):
-        return self.__rho_r_array
+        return self._rho_r_array
+    
+    def get_aej(self):
+        return self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm, self._corr_factors
+    
+    def get_no_aej(self):
+        return self._no_aej_U238, self._no_aej_U235, self._no_aej_Th, self._no_aej_Sm, self._no_corr_factors
+    
+    def set_rho_r_array(self, new_rho_r_array):
+        self._rho_r_array = new_rho_r_array
+
+    def set_relevant_tT(self, new_tT):
+        self._relevant_tT = new_tT
     
     def zircon_alpha_ejection(self):
         return self.alpha_ejection(
-            self.__radius,
-            self.__nodes,
-            self.__r_step,
-            self.__U_ppm,
-            self.__Th_ppm,
-            self.__Sm_ppm,
+            self._radius,
+            self._nodes,
+            self._r_step,
+            self._U_ppm,
+            self._Th_ppm,
+            self._Sm_ppm,
             'zircon',
         )
     
     def zircon_no_ejection(self):
         return self.alpha_ejection(
-            self.__radius,
-            self.__nodes,
-            self.__r_step,
-            self.__U_ppm,
-            self.__Th_ppm,
-            self.__Sm_ppm,
+            self._radius,
+            self._nodes,
+            self._r_step,
+            self._U_ppm,
+            self._Th_ppm,
+            self._Sm_ppm,
             'none',
         )
         
@@ -817,11 +713,11 @@ class zircon(crystal):
             Array of total amount of damage at each time step of relevant_tT. Length of damage is one less than the number of rows in relevant_tT (because last time step is 0).
         
         """
-        U238_atom = self.__U_ppm * U238_ppm_atom
-        U235_atom = self.__U_ppm * U235_ppm_atom
-        Th_atom = self.__Th_ppm * Th_ppm_atom
-        relevant_tT = self.__relevant_tT
-        rho_r_array = self.__rho_r_array
+        U238_atom = self._U_ppm * U238_ppm_atom
+        U235_atom = self._U_ppm * U235_ppm_atom
+        Th_atom = self._Th_ppm * Th_ppm_atom
+        relevant_tT = self._relevant_tT
+        rho_r_array = self._rho_r_array
 
         #calculate dose in alpha/g at each time step
         alpha_i = [
@@ -875,9 +771,9 @@ class zircon(crystal):
         
         """
         #radius to micrometers
-        radius = self.__radius
+        radius = self._radius
         #time in seconds
-        relevant_tT = self.__relevant_tT
+        relevant_tT = self._relevant_tT
 
         #Guenthner et al. (2013) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
         Ea_l = 165.0
@@ -998,56 +894,28 @@ class zircon(crystal):
             diff_list = self.guenthner_diffs(damage)
         elif diff_model == 'mp_diffusion':
             diff_list = self.mp_diffs(damage)[2]
-
-        #create production lists that consider alpha ejection
-        aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_alpha_ejection()
-
+            
         #send it all to the CN_diffusion method
         He_profile = self.CN_diffusion(
-            self.__nodes,
-            self.__r_step,
-            self.__relevant_tT,
+            self._nodes,
+            self._r_step,
+            self._relevant_tT,
             diff_list,
-            aej_U238,
-            aej_U235,
-            aej_Th,
-            aej_Sm,
+            self._aej_U238,
+            self._aej_U235,
+            self._aej_Th,
+            self._aej_Sm,
         )
 
         #calculate date
         
-        #check for zero helium concentration
-        minimum_He = He_profile[0] * 0.5 * self.__r_step
-        for i in range(self.__nodes):
-            if He_profile[i] < minimum_He:
-                minimum_He = He_profile[i]
-        
-        if minimum_He < -He_profile[0] * 0.5:
-            total_He = 0
-            final_damage = damage[-1]
-            return total_He, final_damage, He_profile, total_He
-
-        #convert He profile into a spherical function for integration
-        integral = [
-            He_profile[i] * 4 * np.pi * ((0.5 + i) * self.__r_step) ** 2 
-            for i in range(self.__nodes)
-        ]
-
-        #use Romberg integration to calculate total amount of He
-
-        #homebrewed version (used only for instructional purposes)
-        #start = 0.5 * self.__r_step
-        #end = (self.__nodes - 0.5) * self.__r_step
-        #total_He = self.romberg(integral, start, end, self.__log2_nodes, self.__r_step)
-
-        #scipy version
-        total_He = romb(integral, self.__r_step)
-
-        #units in atoms per volume (base of 1/(4/3 * Pi))
-        total_He = total_He / ((4 / 3) * np.pi)
-
-        date = self.He_date(total_He, corr_factors)
+        He_profile, total_He = self._integrate_profile(He_profile)
         final_damage = damage[-1]
+        
+        if total_He == 0:
+            return 0.0, final_damage, He_profile, 0.0        
+
+        date = self.He_date(total_He, self._corr_factors)
         return date, final_damage, He_profile, total_He
     
     def mp_diffs(self, damage):
@@ -1079,10 +947,10 @@ class zircon(crystal):
         bulk_diff_array = np.zeros(len(damage))
         
         #radius in micrometers
-        radius = self.__radius
+        radius = self._radius
         
         #time in seconds, temp in C
-        relevant_tT = self.__relevant_tT
+        relevant_tT = self._relevant_tT
 
         #mass of amorphous material produced per alpha event (g/alpha)
         #Palenik et al. 2003
@@ -1191,59 +1059,43 @@ class zircon(crystal):
  
         """
 
-        #create production lists that consider (or don't) alpha ejection
-        if eject:
-            aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_alpha_ejection()
-        else:
-            aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_no_ejection()
-
         #convert 1D profiles to radial position profiles
         #reflects 1st node position as 0.5 * r_step from grain center
-        init_fast_He = np.array([
-            init_fast_He[i] * (i + 0.5) * self.__r_step for i in range(0, self.__nodes)
-            ])
-        
-        init_lat_He = np.array([
-            init_lat_He[i] * (i + 0.5) * self.__r_step for i in range(0, self.__nodes)
-            ])
+        init_fast_He = init_fast_He * self._r_vals
+        init_lat_He = init_lat_He  * self._r_vals
 
-        bulk_He_profile, fast_He_profile, lat_He_profile = self.mp_diffusion(
-            self.__nodes, 
-            self.__r_step, 
-            self.__relevant_tT, 
-            diff_parameters, 
-            tolerance, 
-            aej_U238, 
-            aej_U235, 
-            aej_Th, 
-            aej_Sm, 
-            init_fast_He,
-            init_lat_He,
-            produce,
-        )
+        if eject:
+            bulk_He_profile, fast_He_profile, lat_He_profile = self.mp_diffusion(
+                self._nodes, 
+                self._r_step, 
+                self._relevant_tT, 
+                diff_parameters, 
+                tolerance, 
+                self._aej_U238, 
+                self._aej_U235, 
+                self._aej_Th, 
+                self._aej_Sm, 
+                init_fast_He,
+                init_lat_He,
+                produce,
+            )
+        else:
+            bulk_He_profile, fast_He_profile, lat_He_profile = self.mp_diffusion(
+                self._nodes, 
+                self._r_step, 
+                self._relevant_tT, 
+                diff_parameters, 
+                tolerance, 
+                self._no_aej_U238, 
+                self._no_aej_U235, 
+                self._no_aej_Th, 
+                self._no_aej_Sm, 
+                init_fast_He,
+                init_lat_He,
+                produce,
+            )
 
-        #use Romberg integration to calculate total amount of He for each profile
-        #check for zero helium concentration
-        minimum_bulk_He = np.min(bulk_He_profile)
-        bulk_not_0 = True
-
-        if minimum_bulk_He < -bulk_He_profile[0] * 0.5:
-            total_bulk_He = 0
-            bulk_not_0 = False
-        
-
-        #convert He profile into a spherical function for integration
-        integral_bulk = [
-            bulk_He_profile[i] * 4 * np.pi * ((0.5 + i) * self.__r_step) ** 2 
-            for i in range(self.__nodes)
-        ]
-
-        if bulk_not_0:
-            total_bulk_He = romb(integral_bulk, self.__r_step)
-
-
-        #units in atoms per volume (base of 1/(4/3 * Pi))
-        total_bulk_He = total_bulk_He / ((4 / 3) * np.pi)
+        bulk_He_profile, total_bulk_He = self._integrate_profile(bulk_He_profile)
 
         return bulk_He_profile, fast_He_profile, lat_He_profile, total_bulk_He
 
@@ -1288,55 +1140,40 @@ class zircon(crystal):
     
             """
 
-            #create production lists that consider (or don't) alpha ejection
-            if eject:
-                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_alpha_ejection()
-            else:
-                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.zircon_no_ejection()
-
             #convert 1D profiles to radial position profiles
             #reflects 1st node position as 0.5 * r_step from grain center
-            init_He = np.array([
-                init_He[i] * (i + 0.5) * self.__r_step for i in range(0, self.__nodes)
-                ])
+            init_He = init_He * self._r_vals
 
-            bulk_He_profile = self.CN_diffusion(
-                self.__nodes, 
-                self.__r_step, 
-                self.__relevant_tT, 
-                diffs,
-                aej_U238, 
-                aej_U235, 
-                aej_Th, 
-                aej_Sm, 
-                init_He,
-                produce,
-                divide
-            )
+            if eject:
+                bulk_He_profile = self.CN_diffusion(
+                    self._nodes, 
+                    self._r_step, 
+                    self._relevant_tT, 
+                    diffs,
+                    self._aej_U238, 
+                    self._aej_U235, 
+                    self._aej_Th, 
+                    self._aej_Sm, 
+                    init_He,
+                    produce,
+                    divide
+                )
+            else:
+                bulk_He_profile = self.CN_diffusion(
+                    self._nodes, 
+                    self._r_step, 
+                    self._relevant_tT, 
+                    diffs,
+                    self._no_aej_U238, 
+                    self._no_aej_U235, 
+                    self._no_aej_Th, 
+                    self._no_aej_Sm, 
+                    init_He,
+                    produce,
+                    divide
+                )
 
-            #use Romberg integration to calculate total amount of He for each profile
-            #check for zero helium concentration
-            minimum_bulk_He = np.min(bulk_He_profile)
-            bulk_not_0 = True
-
-            if minimum_bulk_He < -bulk_He_profile[0] * 0.5:
-                total_bulk_He = 0
-                bulk_He_profile[:] = 0
-                bulk_not_0 = False
-            
-
-            #convert He profile into a spherical function for integration
-            integral_bulk = [
-                bulk_He_profile[i] * 4 * np.pi * ((0.5 + i) * self.__r_step) ** 2 
-                for i in range(self.__nodes)
-            ]
-
-            if bulk_not_0:
-                total_bulk_He = romb(integral_bulk, self.__r_step)
-
-
-            #units in atoms per volume (base of 1/(4/3 * Pi))
-            total_bulk_He = total_bulk_He / ((4 / 3) * np.pi)
+            bulk_He_profile, total_bulk_He = self._integrate_profile(bulk_He_profile)
 
             return bulk_He_profile, total_bulk_He
 
@@ -1373,63 +1210,80 @@ class apatite(crystal):
     
         """
         super().__init__()
-        self.__radius = radius
-        self.__log2_nodes = log2_nodes
-        self.__nodes = 2**log2_nodes + 1
+        self._radius = radius
+        self._log2_nodes = log2_nodes
+        self._nodes = 2**log2_nodes + 1
         #grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
-        self.__r_step = radius / (self.__nodes + 0.5) 
-        self.__U_ppm = U_ppm
-        self.__Th_ppm = Th_ppm
-        self.__Sm_ppm = Sm_ppm
-        self.__relevant_tT = relevant_tT
-        self.__rho_r_array = rho_r_array
+        self._r_step = radius / (self._nodes + 0.5)
+        self._r_vals = (np.arange(self._nodes) + 0.5) * self._r_step
+        self._U_ppm = U_ppm
+        self._Th_ppm = Th_ppm
+        self._Sm_ppm = Sm_ppm
+        self._relevant_tT = relevant_tT
+        self._rho_r_array = rho_r_array
+
+        #compute alpha ejection profiles
+        self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm,self._corr_factors = self.apatite_alpha_ejection()
+        self._no_aej_U238, self._no_aej_U235, self._no_aej_Th, self._no_aej_Sm, self._no_corr_factors = self.apatite_no_ejection()
 
     def get_radius(self):
-        return self.__radius
+        return self._radius
     
     def get_log2_nodes(self):
-        return self.__log2_nodes
+        return self._log2_nodes
     
     def get_nodes(self):
-        return self.__nodes
+        return self._nodes
     
     def get_r_step(self):
-        return self.__r_step
+        return self._r_step
     
     def get_U_ppm(self):
-        return self.__U_ppm
+        return self._U_ppm
     
     def get_Th_ppm(self):
-        return self.__Th_ppm
+        return self._Th_ppm
     
     def get_Sm_ppm(self):
-        return self.__Sm_ppm
+        return self._Sm_ppm
     
     def get_relevant_tT(self):
-        return self.__relevant_tT
+        return self._relevant_tT
     
     def get_rho_r_array(self):
-        return self.__rho_r_array
+        return self._rho_r_array
+    
+    def get_aej(self):
+        return self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm, self._corr_factors
+    
+    def get_no_aej(self):
+        return self._no_aej_U238, self._no_aej_U235, self._no_aej_Th, self._no_aej_Sm, self._no_corr_factors
+    
+    def set_rho_r_array(self, new_rho_r_array):
+        self._rho_r_array = new_rho_r_array
+
+    def set_relevant_tT(self, new_tT):
+        self._relevant_tT = new_tT
     
     def apatite_alpha_ejection(self):
         return self.alpha_ejection(
-            self.__radius,
-            self.__nodes,
-            self.__r_step,
-            self.__U_ppm,
-            self.__Th_ppm,
-            self.__Sm_ppm,
+            self._radius,
+            self._nodes,
+            self._r_step,
+            self._U_ppm,
+            self._Th_ppm,
+            self._Sm_ppm,
             'apatite',
         )
     
     def apatite_no_ejection(self):
         return self.alpha_ejection(
-            self.__radius,
-            self.__nodes,
-            self.__r_step,
-            self.__U_ppm,
-            self.__Th_ppm,
-            self.__Sm_ppm,
+            self._radius,
+            self._nodes,
+            self._r_step,
+            self._U_ppm,
+            self._Th_ppm,
+            self._Sm_ppm,
             'none',
         )
         
@@ -1449,13 +1303,13 @@ class apatite(crystal):
         L = 0.000815
         
         #convert ppm to atoms/cc
-        U235_vol = self.__U_ppm * U235_ppm_atom * ap_density
-        U238_vol = self.__U_ppm * U238_ppm_atom * ap_density
-        Th_vol = self.__Th_ppm * Th_ppm_atom * ap_density
-        Sm_vol = self.__Sm_ppm * Sm_ppm_atom * ap_density
+        U235_vol = self._U_ppm * U235_ppm_atom * ap_density
+        U238_vol = self._U_ppm * U238_ppm_atom * ap_density
+        Th_vol = self._Th_ppm * Th_ppm_atom * ap_density
+        Sm_vol = self._Sm_ppm * Sm_ppm_atom * ap_density
         
-        relevant_tT = self.__relevant_tT
-        rho_r_array = self.__rho_r_array
+        relevant_tT = self._relevant_tT
+        rho_r_array = self._rho_r_array
 
         #rho v calculation, atoms/cc
         rho_v = [
@@ -1522,9 +1376,9 @@ class apatite(crystal):
         D0_L_a2 = np.exp(9.733)  # 1/s
 
         #convert D0_L_a2 to micrometers2/s using crystal radius
-        D0_L = D0_L_a2 * self.__radius**2
+        D0_L = D0_L_a2 * self._radius**2
 
-        relevant_tT = self.__relevant_tT
+        relevant_tT = self._relevant_tT
 
         #calculate diffusivities at each time step, equation 8 in Flowers et al. (2009), units are in micrometers2/s
         diff_list = [
@@ -1591,56 +1445,27 @@ class apatite(crystal):
         if diff_model == 'flowers':
             diff_list = self.flowers_diffs(damage)
 
-        #create production lists that consider alpha ejection
-        aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.apatite_alpha_ejection()
-
         #send it all to the CN_diffusion method
         He_profile = self.CN_diffusion(
-            self.__nodes,
-            self.__r_step,
-            self.__relevant_tT,
+            self._nodes,
+            self._r_step,
+            self._relevant_tT,
             diff_list,
-            aej_U238,
-            aej_U235,
-            aej_Th,
-            aej_Sm,
-            )
+            self._aej_U238,
+            self._aej_U235,
+            self._aej_Th,
+            self._aej_Sm,
+        )
 
         #calculate date
-
-        #check for zero helium concentration
-        minimum_He = He_profile[0] * 0.5 * self.__r_step
-        for i in range(self.__nodes):
-            if He_profile[i] < minimum_He:
-                minimum_He = He_profile[i]
         
-        if minimum_He < -He_profile[0] * 0.5:
-            total_He = 0
-            final_damage = damage[-1]
-            return total_He, final_damage, He_profile, total_He
-        
-        #convert He profile into a spherical function for integration
-        integral = [
-            He_profile[i] * 4 * np.pi * ((0.5 + i) * self.__r_step) ** 2 
-            for i in range(self.__nodes)
-        ]
-
-        #use Romberg integration algorithm to calculate total amount of He
-
-        #homebrewed version (used only for instructional purposes)
-        #start = 0.5 * self.__r_step
-        #end = (self.__nodes - 0.5) * self.__r_step
-        #total_He = self.romberg(integral, start, end, self.__log2_nodes, self.__r_step)
-
-        #scipy version
-        total_He = romb(integral, self.__r_step)
-        
-        #units in atoms per volume (base of 1/(4/3 * Pi))
-        total_He = total_He / ((4 / 3) *np.pi)
-
-        date = self.He_date(total_He, corr_factors)
+        He_profile, total_He = self._integrate_profile(He_profile)
         final_damage = damage[-1]
+        
+        if total_He == 0:
+            return 0.0, final_damage, He_profile, 0.0        
 
+        date = self.He_date(total_He, self._corr_factors)
         return date, final_damage, He_profile, total_He
 
     def CN_profile(
@@ -1683,55 +1508,41 @@ class apatite(crystal):
     
             """
 
-            #create production lists that consider (or don't) alpha ejection
-            if eject:
-                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.apatite_alpha_ejection()
-            else:
-                aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = self.apatite_no_ejection()
-
             #convert 1D profiles to radial position profiles
             #reflects 1st node position as 0.5 * r_step from grain center
             init_He = np.array([
-                init_He[i] * (i + 0.5) * self.__r_step for i in range(0, self.__nodes)
+                init_He[i] * (i + 0.5) * self._r_step for i in range(0, self._nodes)
                 ])
 
-            bulk_He_profile = self.CN_diffusion(
-                self.__nodes, 
-                self.__r_step, 
-                self.__relevant_tT, 
-                diffs,
-                aej_U238, 
-                aej_U235, 
-                aej_Th, 
-                aej_Sm, 
-                init_He,
-                produce,
-                divide
-            )
+            if eject:
+                bulk_He_profile = self.CN_diffusion(
+                    self._nodes, 
+                    self._r_step, 
+                    self._relevant_tT, 
+                    diffs,
+                    self._aej_U238, 
+                    self._aej_U235, 
+                    self._aej_Th, 
+                    self._aej_Sm, 
+                    init_He,
+                    produce,
+                    divide
+                )
+            else:
+                bulk_He_profile = self.CN_diffusion(
+                    self._nodes, 
+                    self._r_step, 
+                    self._relevant_tT, 
+                    diffs,
+                    self._no_aej_U238, 
+                    self._no_aej_U235, 
+                    self._no_aej_Th, 
+                    self._no_aej_Sm, 
+                    init_He,
+                    produce,
+                    divide
+                )
 
-            #use Romberg integration to calculate total amount of He for each profile
-            #check for zero helium concentration
-            minimum_bulk_He = np.min(bulk_He_profile)
-            bulk_not_0 = True
-
-            if minimum_bulk_He < -bulk_He_profile[0] * 0.5:
-                total_bulk_He = 0
-                bulk_He_profile[:] = 0
-                bulk_not_0 = False
-            
-
-            #convert He profile into a spherical function for integration
-            integral_bulk = [
-                bulk_He_profile[i] * 4 * np.pi * ((0.5 + i) * self.__r_step) ** 2 
-                for i in range(self.__nodes)
-            ]
-
-            if bulk_not_0:
-                total_bulk_He = romb(integral_bulk, self.__r_step)
-
-
-            #units in atoms per volume (base of 1/(4/3 * Pi))
-            total_bulk_He = total_bulk_He / ((4 / 3) * np.pi)
+            bulk_He_profile, total_bulk_He = self._integrate_profile(bulk_He_profile)
 
             return bulk_He_profile, total_bulk_He
-    
