@@ -1223,7 +1223,7 @@ class apatite(crystal):
         self._rho_r_array = rho_r_array
 
         #compute alpha ejection profiles
-        self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm,self._corr_factors = self.apatite_alpha_ejection()
+        self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm, self._corr_factors = self.apatite_alpha_ejection()
         self._no_aej_U238, self._no_aej_U235, self._no_aej_Th, self._no_aej_Sm, self._no_corr_factors = self.apatite_no_ejection()
 
     def get_radius(self):

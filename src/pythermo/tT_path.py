@@ -49,25 +49,27 @@ class tT_path:
         Returns
         -------
         
-        tTout: 2D array
+        tT_out: 2D array
             Interpolated array of tT points
 
         """
         
         #default time step is set to 1% of total length of time
-        start_time = self._tTin[-1,0]
-        default_time_step = 0.1 * start_time
+        start_time = self._tTin[-1, 0]
+        default_time_step = 0.01 * start_time
         previous_time_step = default_time_step
 
         #list of time segments over which to interpolate, appended to in for loop
         segments = []
 
         #for loop steps through each segment of tTin
-        for i in range(np.size(self._tTin, 0) - 1, 0, -1):
+        for i in range(self._tTin.shape[0] - 1, 0, -1):
             #rate of temperature change (oC/m.y.)
-            rate=(self._tTin[i,1] - self._tTin[i - 1, 1]) / (
-                self._tTin[i, 0] - self._tTin[i - 1, 0]
-            )
+            dt = self._tTin[i, 0] - self._tTin[i - 1, 0]
+            if dt == 0:
+                continue
+            
+            rate = (self._tTin[i, 1] - self._tTin[i - 1, 1]) / dt
             abs_rate = abs(rate)
             temp_per_time_step = abs_rate * default_time_step
             
@@ -79,12 +81,16 @@ class tT_path:
             time_step = current_default_time_step
             if time_step > previous_time_step * self._acceleration:
                 time_step = previous_time_step * self._acceleration
+
+            # if the segment is already finer than the computed time step, use it as-is
+            if dt <= time_step:
+                segments.append(np.array([self._tTin[i, 0]]))
+                previous_time_step = dt
+                continue
             
             #conversion of number of steps to an int rounds down
             #results in some cases to a relatively small amount of round off error 
-            number_of_steps = int(
-                (self._tTin[i, 0] - self._tTin[i - 1, 0]) / time_step
-            )
+            number_of_steps = max(1, int(dt / time_step))
             
             #some error proofing included just in case
             indices = np.arange(number_of_steps)
@@ -128,6 +134,8 @@ class tT_path:
         """
 
         #unpack kinetics list
+        if len(kinetics) != 8:
+            raise ValueError(f"Expected 8 kinetics values, got {len(kinetics)}")
         C0 = kinetics[0]
         C1 = kinetics[1]
         C2 = kinetics[2]
@@ -152,6 +160,10 @@ class tT_path:
         
         #youngest track is unannealed
         oldest_track_list = [1]
+
+        #intialize some track variables
+        present_old_track = 0
+        oldest_track = 0
         
         for i in range(tT_len - 2, -1, -1):
             old_track_time = interp_tT[i, 0] - interp_tT[i + 1, 0] + t_eq

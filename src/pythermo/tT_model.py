@@ -1,7 +1,7 @@
 """ 
 tT_model.py
 
-Particular approaches to forward modeling and plotting apatite and zircon (U-Th)/He date-effective uranium (eU) relationships.
+Several approaches to forward modeling and plotting apatite and zircon (U-Th)/He date-effective uranium (eU) relationships.
 
 """
 import matplotlib.pyplot as plt
@@ -920,6 +920,10 @@ class tT_model:
             The diffusivity of an object calculated from its fractional loss, normalized to size. Units of 1/s.
         '''
 
+        #guard against exhausted gas, no meaningful D/a2 to compute
+        if frac >= 1.0 or frac_pre >= 1.0 or frac == frac_pre:
+            return np.nan
+
         if shape == 'sphere':
             if frac < 0.85:
                 D_a2 = (
@@ -939,6 +943,6 @@ class tT_model:
                     * np.log((1 - frac) / (1 - frac_pre))
                 )
         else:
-            print('Fractional loss equation requires a shape!')
+            raise TypeError('Fractional loss equation requires a shape!')
 
         return D_a2
