@@ -1510,9 +1510,7 @@ class apatite(crystal):
 
             #convert 1D profiles to radial position profiles
             #reflects 1st node position as 0.5 * r_step from grain center
-            init_He = np.array([
-                init_He[i] * (i + 0.5) * self._r_step for i in range(0, self._nodes)
-                ])
+            init_He = init_He * self._r_vals
 
             if eject:
                 bulk_He_profile = self.CN_diffusion(

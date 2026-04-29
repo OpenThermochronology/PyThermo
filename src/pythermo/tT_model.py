@@ -878,7 +878,8 @@ class tT_model:
                 #calculate D/a2 from frac loss, save ln(D/a2) value to frac loss array for this grain
                 frac_loss_array[j, 0] = 1e4/(temp + 273.15)
                 frac_loss_array[j, 1] = frac_loss_bulk
-                frac_loss_array[j, 2] = np.log(self.frac_loss(frac_loss_bulk, frac_loss_pre, time))
+                D_a2 = self.frac_loss(frac_loss_bulk, frac_loss_pre, time)
+                frac_loss_array[j, 2] = np.log(D_a2) if not np.isnan(D_a2) else np.nan
 
                 #fractional loss for next step-heating segment
                 frac_loss_pre = frac_loss_bulk
