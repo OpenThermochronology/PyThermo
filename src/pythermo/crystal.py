@@ -270,7 +270,7 @@ class crystal:
             Alpha ejected 1D profile for 147Sm (in atoms/g), must be length of nodes
         
         init_He: optional 1D array
-            1D profile of alphas for lattice, must be length of nodes. Default is None. Must be in terms of radial position. 
+            1D profile of atoms for lattice, must be length of nodes. Default is None. Must be in terms of radial position. 
         
         produce: optional boolean
             Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True'.
@@ -356,10 +356,10 @@ class crystal:
             Alpha ejected 1D profile for 147Sm (in atoms/g), must be length of nodes
         
         init_fast_He: optional 1D array
-            1D profile of alphas for fast path, must be length of nodes. Default is None. Must be in terms of radial position (see mp_profile function).
+            1D profile of atoms for fast path, must be length of nodes. Default is None. Must be in terms of radial position (see mp_profile function).
         
         init_lat_He: optional 1D array
-            1D profile of alphas for lattice, must be length of nodes. Default is None. Must be in terms of radial position (see mp_profile function). 
+            1D profile of atoms for lattice, must be length of nodes. Default is None. Must be in terms of radial position (see mp_profile function). 
         
         produce: optional boolean
             Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True'.
@@ -393,7 +393,7 @@ class crystal:
         init_fast = np.asarray(init_fast_He, dtype=np.float64) if init_fast_He is not None else np.zeros(nodes)
         init_lat  = np.asarray(init_lat_He, dtype=np.float64) if init_lat_He is not None else np.zeros(nodes)
 
-        bulk_He_profile, fast_He_profile, lat_He_profile = _mp_diffusion_core(
+        bulk_He_profile, fast_He_profile, lat_He_profile, converged = _mp_diffusion_core(
                 nodes,
                 r_step,
                 tT_path,
@@ -413,6 +413,13 @@ class crystal:
                 M,
                 initial_damp,
         )
+
+        if not converged:
+            warnings.warn(
+                'Diffusion solver did not converge',
+                RuntimeWarning,
+                stacklevel=2
+            )
 
         return bulk_He_profile, fast_He_profile, lat_He_profile
     
@@ -856,7 +863,7 @@ class zircon(crystal):
     
         return diff_list
             
-    def zirc_date(self, diff_model, dam_model):
+    def zirc_date(self, diff_model, dam_model, init_He = None):
         """
         Zircon (U-Th)/He date calculator. First calculates the diffusivity at each time step of class variable relevant_tT using various parameterizations. Current available diffusion models include Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01), and Guenthner et al. (XXXX). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally, the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
 
@@ -868,6 +875,9 @@ class zircon(crystal):
 
         dam_model: string
             Damage annealing model, current choices are 'guenthner' for the parameterization of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01)
+
+        init_He: optional 1D array of floats
+            1D profile of atoms for lattice, must be length of nodes. Default is None. Must be in terms of radial position. 
         
         Returns
         -------
@@ -905,6 +915,7 @@ class zircon(crystal):
             self._aej_U235,
             self._aej_Th,
             self._aej_Sm,
+            init_He,
         )
 
         #calculate date
@@ -1408,7 +1419,7 @@ class apatite(crystal):
 
         return diff_list
     
-    def ap_date(self, diff_model, dam_model):
+    def ap_date(self, diff_model, dam_model, init_He = None):
         """
         Apatite (U-Th)/He date calculator. First calculates the diffusivity at each time step of class variable relevant_tT using various parameterizations. Current available diffusion models include Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally,the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
 
@@ -1420,6 +1431,10 @@ class apatite(crystal):
 
         dam_model: string
             Damage annealing model, current choices are 'flowers' for the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015).
+
+        init_He: optional 1D array of floats
+            1D profile of atoms for lattice, must be length of nodes. Default is None. Must be in terms of radial position. 
+        
 
         Returns
         -------
@@ -1455,6 +1470,7 @@ class apatite(crystal):
             self._aej_U235,
             self._aej_Th,
             self._aej_Sm,
+            init_He,
         )
 
         #calculate date

@@ -879,16 +879,19 @@ class tT_model:
                 frac_loss_array[j, 0] = 1e4/(temp + 273.15)
                 frac_loss_array[j, 1] = frac_loss_bulk
                 D_a2 = self.frac_loss(frac_loss_bulk, frac_loss_pre, time)
-                frac_loss_array[j, 2] = np.log(D_a2) if not np.isnan(D_a2) else np.nan
+                if np.isnan(D_a2) or D_a2 <= 0:
+                    frac_loss_array[j, 2] = np.nan
+                else:
+                    frac_loss_array[j, 2] = np.log(D_a2)
 
                 #fractional loss for next step-heating segment
                 frac_loss_pre = frac_loss_bulk
            
             
-            #normalize concentration profiles to total initial He in the bulk grain
-            profiles[:, 0] = bulk_He / init_He
-            profiles[:, 1] = fast_He / init_He
-            profiles[:, 2] = lat_He / init_He
+            #concentration profiles
+            profiles[:, 0] = bulk_He
+            profiles[:, 1] = fast_He
+            profiles[:, 2] = lat_He
             
             #save arrhenius and profile list for this grain to array of lists for all grains
             frac_loss_data.append(frac_loss_array)

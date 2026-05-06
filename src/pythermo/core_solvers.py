@@ -191,7 +191,7 @@ def _CN_diffusion_core(
             Alpha ejected 1D profile for 147Sm (in atoms/g), must be length of nodes
         
         init_He: 1D array
-            1D profile of alphas for lattice, must be length of nodes. Default is an array of zeros. Must be in terms of radial position. 
+            1D profile of atoms for lattice, must be length of nodes. Default is an array of zeros. Must be in terms of radial position. 
         
         allow: float
             Allows for alpha production (equals 1.0) or no alpha production (equals 0.0) during diffusion, useful for generating Arrhenius trends.
@@ -353,10 +353,10 @@ def _mp_diffusion_core(
             Alpha ejected 1D profile for 147Sm (in atoms/g), must be length of nodes
         
         init_fast_He: 1D array
-            1D profile of alphas for fast path, must be length of nodes. Default is zeros. Must be in terms of radial position (see mp_profile function).
+            1D profile of atoms for fast path, must be length of nodes. Default is zeros. Must be in terms of radial position (see mp_profile function).
         
         init_lat_He: 1D array
-            1D profile of alphas for lattice, must be length of nodes. Default is zeros. Must be in terms of radial position (see mp_profile function). 
+            1D profile of atoms for lattice, must be length of nodes. Default is zeros. Must be in terms of radial position (see mp_profile function). 
         
         allow: float
             Allows for alpha production (equals 1.0) or no alpha production (equals 0.0) during diffusion, useful for generating Arrhenius trends.
@@ -382,6 +382,9 @@ def _mp_diffusion_core(
         lat_He_profile: 1D array of floats
             The 1D radial profile of diffused He in the lattice
 
+        converged: boolean
+            Informs higher level callers if the while loop converged because tolerance was reached ('True') or maximum number of iterations was reached ('False')
+
         """
 
         #set up arrays for tridiagonal matrix
@@ -404,6 +407,9 @@ def _mp_diffusion_core(
         a[-1] = 0.0
         c = np.ones(nodes)
         c[0] = 0.0
+
+        #maximum number of allowed interations for the while loop
+        max_iter = 50
         
         #step through time from old to young
         for i in range(tT_path.shape[0] - 1):
@@ -427,7 +433,7 @@ def _mp_diffusion_core(
                 beta_v = (2.0 * r_step**2) / (D_v[i] * dt)
 
                 #initial guess at each sub-interval of u_lat (use previous time step)
-                u_lat = u_lat_n
+                u_lat = u_lat_n.copy()
 
                 #create alpha production array
                 all_alphas = (
@@ -480,7 +486,7 @@ def _mp_diffusion_core(
                 diff_max = 1.0
                 counter = 0
                 
-                while diff_max > tolerance and counter < 50:
+                while diff_max > tolerance and counter < max_iter:
 
                     #for comparison with updated values in diff_max
                     u_fp_old = u_fp
@@ -547,6 +553,9 @@ def _mp_diffusion_core(
                     diff_max = max(xi_max, omega_max)
                     counter = counter + 1
                 
+                #check whether the while loop is actually converging
+                converged = diff_max <= tolerance
+
                 #update u_n vectors and move to the next sub-interval time step
                 u_fp_n = u_fp
                 u_lat_n = u_lat  
@@ -557,7 +566,7 @@ def _mp_diffusion_core(
         lat_He_profile  = u_lat_n / r_vals
         bulk_He_profile = (u_fp_n + u_lat_n) / r_vals
         
-        return bulk_He_profile, fast_He_profile, lat_He_profile
+        return bulk_He_profile, fast_He_profile, lat_He_profile, converged
 
 @jit(nopython=True)
 def _teq_rho_r(
