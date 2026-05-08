@@ -27,10 +27,10 @@ class tT_path:
         """
         self._tTin = tTin
 
-        #in degrees C
+        # in degrees C
         self._precision = temp_precision
 
-        #in millions of years
+        # in millions of years
         self._acceleration = rate_acceleration
 
     def get_tTin(self):
@@ -54,17 +54,17 @@ class tT_path:
 
         """
         
-        #default time step is set to 1% of total length of time
+        # default time step is set to 1% of total length of time
         start_time = self._tTin[-1, 0]
         default_time_step = 0.01 * start_time
         previous_time_step = default_time_step
 
-        #list of time segments over which to interpolate, appended to in for loop
+        # list of time segments over which to interpolate, appended to in for loop
         segments = []
 
-        #for loop steps through each segment of tTin
+        # for loop steps through each segment of tTin
         for i in range(self._tTin.shape[0] - 1, 0, -1):
-            #rate of temperature change (oC/m.y.)
+            # rate of temperature change (oC/m.y.)
             dt = self._tTin[i, 0] - self._tTin[i - 1, 0]
             if dt == 0:
                 continue
@@ -88,11 +88,11 @@ class tT_path:
                 previous_time_step = dt
                 continue
             
-            #conversion of number of steps to an int rounds down
-            #results in some cases to a relatively small amount of round off error 
+            # conversion of number of steps to an int rounds down
+            # results in some cases to a relatively small amount of round off error 
             number_of_steps = max(1, int(dt / time_step))
             
-            #some error proofing included just in case
+            # some error proofing included just in case
             indices = np.arange(number_of_steps)
             time_segment = self._tTin[i,0] - time_step * indices 
             time_segment = time_segment[time_segment > self._tTin[i - 1, 0]]
@@ -100,12 +100,12 @@ class tT_path:
             segments.append(time_segment)
             previous_time_step = time_step
 
-        #add on the last time step (present day) and interpolate
+        # add on the last time step (present day) and interpolate
         segments.append(np.array([0.0]))
         time_array = np.concatenate(segments)
         temp_out = np.interp(time_array, self._tTin[:, 0], self._tTin[:, 1])
 
-        #convert time to secs and temperature to Kelvin
+        # convert time to secs and temperature to Kelvin
         time_array = time_array * sec_per_myr
         temp_out = temp_out + 273.15
         tT_out = np.column_stack([time_array, temp_out])
@@ -133,7 +133,7 @@ class tT_path:
 
         """
 
-        #unpack kinetics list
+        # unpack kinetics list
         if len(kinetics) != 8:
             raise ValueError(f"Expected 8 kinetics values, got {len(kinetics)}")
         C0 = kinetics[0]
@@ -150,25 +150,25 @@ class tT_path:
         else:
             mineral_type = 'apatite'
 
-        #interpolate tT path
+        # interpolate tT path
         interp_tT = self.tT_interpolate()
         tT_len = np.size(interp_tT, 0)
 
-        #find the oldest track that still exists at the present day, store its annealing history in a list
+        # find the oldest track that still exists at the present day, store its annealing history in a list
         t_eq = 0.0
         temp_mean = np.log(2 / (interp_tT[tT_len - 2, 1] + interp_tT[tT_len - 1, 1]))
         
-        #youngest track is unannealed
+        # youngest track is unannealed
         oldest_track_list = [1]
 
-        #intialize some track variables
+        # intialize some track variables
         present_old_track = 0
         oldest_track = 0
         
         for i in range(tT_len - 2, -1, -1):
             old_track_time = interp_tT[i, 0] - interp_tT[i + 1, 0] + t_eq
 
-            #just in case there's a zero time step
+            # just in case there's a zero time step
             if old_track_time <= 0: 
                 continue
 
@@ -183,12 +183,12 @@ class tT_path:
             
             oldest_track_list.insert(0, r)
 
-            #are we at the oldest? 
+            # are we at the oldest? 
             if r <= total_anneal:
                 oldest_track_list[0] = 0
                 present_old_track = i
                 break
-            #convert to reduced density (mineral type dependent)
+            # convert to reduced density (mineral type dependent)
             else:
                 if mineral_type == 'apatite':
                     rc_lr = ((r - rmr0)/(1 - rmr0)) ** kappa
@@ -200,7 +200,7 @@ class tT_path:
                 elif mineral_type == 'zircon':
                     oldest_track_list[0] = 1.25 * (r - 0.2)
             
-            #calculate t_eq, prevent subzero indexing
+            # calculate t_eq, prevent subzero indexing
             if i == 0:
                 present_old_track = 0
                 break
@@ -210,13 +210,13 @@ class tT_path:
                     C2 + (temp_mean - C3) * (((1 / r) - 1) ** alpha - C0) / C1
                 )
 
-        #now find the oldest track that still existed when the present day oldest track formed
+        # now find the oldest track that still existed when the present day oldest track formed
         if present_old_track > 0:
             t_eq = 0.0
             for i in range(present_old_track - 1, -1, -1):
                 oldest_track_time = interp_tT[i, 0] - interp_tT[i + 1, 0] + t_eq
 
-                #just in case there's a zero time step
+                # just in case there's a zero time step
                 if oldest_track_time <= 0: 
                     continue
 
@@ -229,12 +229,12 @@ class tT_path:
                 else:
                     r = 1 / r
 
-                #are we at the oldest?
+                # are we at the oldest?
                 if r <= total_anneal:
                     oldest_track = i
                     break
                 
-                #calculate t_eq, prevent subzero indexing
+                # calculate t_eq, prevent subzero indexing
                 if i == 0:
                     oldest_track = 0
                     break
@@ -247,19 +247,19 @@ class tT_path:
         else:
             oldest_track = 0
 
-        #calculate the reduced length 2D array, only go back to the oldest track
+        # calculate the reduced length 2D array, only go back to the oldest track
         relevant_tracks = tT_len - oldest_track
         rho_r_array = np.zeros((relevant_tracks, relevant_tracks))
         
-        #shorten the interpolated tT path
+        # shorten the interpolated tT path
         interp_tT = interp_tT[oldest_track:tT_len]
 
-        #fill in youngest row of tracks (history of track that lives to present day)
+        # fill in youngest row of tracks (history of track that lives to present day)
         rho_r_array[
             relevant_tracks - 1, present_old_track - oldest_track : relevant_tracks
         ] = oldest_track_list
 
-        #fill in the rest with call to numba method
+        # fill in the rest with call to numba method
         is_apatite = mineral_type == 'apatite'
         rho_r_array = _teq_rho_r(
             rho_r_array, interp_tT[:, 0], interp_tT[:, 1],

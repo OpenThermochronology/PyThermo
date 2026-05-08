@@ -1,9 +1,15 @@
+"""
+test_tT_model.py
+
+Tests for tT_model.py functions.
+"""
+
 import pythermo as pyt
 import pandas as pd
 import numpy as np
 import pytest
 
-#useful helper functions
+# useful helper functions
 
 def make_grains(mineral='zircon', n=1, dam_model='guenthner',
                 diff_model='guenthner', size=60.0,
@@ -45,7 +51,7 @@ def make_model(mineral='zircon', n_grains=1, dam_model='guenthner',
     tT_in = make_tT(steps=n_steps, temp_c=temp_c)
     return pyt.tT_model(grain_in, tT_in)
 
-#forward model tests
+# forward model tests
 
 def test_ap_forward():
     tT_in = np.array([[0,20],[250,150],[500,20]])
@@ -191,9 +197,9 @@ def test_zirc_forward():
         and model_data[6, 2] == np.mean(obs_data[:, 3]) - 10
     )
 
-#step_degas tests
+# step_degas tests
 
-#output shape tests
+# output shape tests
 
 def test_returns_two_lists():
     model = make_model()
@@ -234,7 +240,7 @@ def test_no_inf_in_outputs():
     assert not np.any(np.isinf(fl[0]))
 
 
-#input tests
+# input tests
 
 def test_invalid_mineral_returns_none():
     model = make_model(mineral='calcite')
@@ -253,7 +259,7 @@ def test_zircon_runs_without_error():
     assert len(fl) == 1
 
 def test_custom_init_profile_used():
-    #supplying init_profile should bypass the internal He calculator
+    # supplying init_profile should bypass the internal He calculator
     model = make_model()
     nodes = 2**8 + 1
     custom = np.ones(nodes) * 1e10
@@ -265,14 +271,14 @@ def test_custom_init_profile_used():
 
 def test_custom_grain_diffs_used():
     model = make_model(n_steps=3)
-    #artificially large diffusivities should increase fractional loss
+    # artificially large diffusivities should increase fractional loss
     grain_diffs = np.full((3, 3), 1e-1)
     fl_default, _ = model.step_degas(make_diff_params(), 'MP', 1e-6)
     fl_fast, _ = model.step_degas(make_diff_params(), 'MP', 1e-6, grain_diffs=grain_diffs)
     assert fl_fast[0][-1, 1] > fl_default[0][-1, 1]
 
 
-#fractional loss tests
+# fractional loss tests
 
 def test_frac_loss_between_zero_and_one():
     model = make_model(n_steps=10, temp_c=400.0)
@@ -313,7 +319,7 @@ def test_higher_temp_lower_10000_over_T():
     assert fl_hi[0][0, 0] < fl_lo[0][0, 0]
 
 
-#diffusion type tests, MP vs CN
+# diffusion type tests, MP vs CN
 
 def test_MP_runs_without_error():
     model = make_model()
@@ -336,7 +342,7 @@ def test_MP_lattice_profile_nonzero_for_distribute():
     assert np.any(pr[0][:, 2] > 0)
 
 def test_CN_fast_path_profile_is_zero():
-    #CN only fills the bulk column, fast and lattice should be zeros
+    # CN only fills the bulk column, fast and lattice should be zeros
     model = make_model()
     _, pr = model.step_degas(make_diff_params(), 'CN', 1e-6)
     assert np.allclose(pr[0][:, 1], 0.0)
@@ -347,7 +353,7 @@ def test_CN_lattice_profile_is_zero():
     assert np.allclose(pr[0][:, 2], 0.0)
 
 
-#alpha ejection tests
+# alpha ejection tests
 
 def test_eject_false_runs():
     model = make_model()
@@ -359,18 +365,21 @@ def test_eject_true_runs():
     fl, _ = model.step_degas(make_diff_params(), 'CN', 1e-6, eject=True)
     assert len(fl) == 1
 
-#initial style of He distribution tests
+# initial style of He distribution tests
 
 def test_lattice_style_fast_path_starts_zero():
     model = make_model(n_steps=1, temp_c=50.0)   
     _, pr = model.step_degas(make_diff_params('lattice'), 'MP', 1e-6)
-    #after only one low-T step, fast-path should still be near zero
-    assert np.mean(pr[0][:, 1]) < 0.05
+    # after only one low-T step, fast-path should still be near zero
+    # compared to lattice path
+    assert np.mean(pr[0][:, 1]) / np.mean(pr[0][:, 2]) < 0.05
 
 def test_fast_path_style_lattice_starts_zero():
     model = make_model(n_steps=1, temp_c=50.0)
     _, pr = model.step_degas(make_diff_params('fast_path',-1e-1), 'MP', 1e-6)
-    assert np.mean(pr[0][:, 2]) < 0.05
+    # after only one low-T step, lattice should still be near zero
+    # compared to fast path
+    assert np.mean(pr[0][:, 2]) / np.mean(pr[0][:, 1]) < 0.05
 
 def test_distribute_splits_between_pathways():
     model = make_model(n_steps=1, temp_c=50.0)
@@ -400,7 +409,7 @@ class TestDamageModelsCN:
         assert result is None
 
 
-#test different grain aspects
+# test different grain aspects
 
 def test_two_grains_return_two_results():
     model = make_model(n_grains=2)
@@ -415,7 +424,7 @@ def test_different_grain_sizes_differ():
     tT_in = make_tT()
     model = pyt.tT_model(grain_in, tT_in)
     fl, _ = model.step_degas(make_diff_params(), 'CN', 1e-6)
-    #smaller grain should lose more He (shorter diffusion path length)
+    # smaller grain should lose more He (shorter diffusion path length)
     assert fl[0][-1, 1] > fl[1][-1, 1]
 
 def test_mixed_mineral_types():
@@ -429,7 +438,7 @@ def test_mixed_mineral_types():
     assert len(fl) == 2
 
 
-#tT recipe edge cases 
+# tT recipe edge cases 
 
 def test_single_step():
     model = make_model(n_steps=1, temp_c=300.0)
@@ -450,7 +459,7 @@ def test_repeated_identical_steps_monotonic():
     assert np.all(np.diff(vals) >= -1e-9)
 
 
-#log2_nodes tests
+# log2_nodes tests
 
 def test_default_node_count():
     model = make_model()

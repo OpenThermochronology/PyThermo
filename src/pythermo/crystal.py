@@ -22,7 +22,7 @@ from .constants import (
     gas_constant, 
     ap_density,
 )
-from .core_solvers import _CN_diffusion_core, _mp_diffusion_core
+from .core_solvers import _CN_diffusion_core_wrapper, _mp_diffusion_core
 from scipy.integrate import romb
 import warnings
 
@@ -71,14 +71,14 @@ class crystal:
             Various Ft correction factors and total values for parent isotopes in atoms/g
         
         """
-        #unit conversion for U,Th,Sm inputs to atoms/g
+        # unit conversion for U,Th,Sm inputs to atoms/g
         U238_atom = U_ppm * U238_ppm_atom
         U235_atom = U_ppm * U235_ppm_atom
         Th_atom = Th_ppm * Th_ppm_atom
         Sm_atom = Sm_ppm * Sm_ppm_atom
 
-        #alpha stopping distances as reported in Ketcham et al. (2011) (https://doi.org/10.1016/j.gca.2011.10.011)
-        #option for no alpha ejection   
+        # alpha stopping distances as reported in Ketcham et al. (2011) (https://doi.org/10.1016/j.gca.2011.10.011)
+        # option for no alpha ejection   
         if(mineral_type == 'apatite'):         
             as_U238 = 18.81
             as_U235 = 21.80
@@ -95,19 +95,19 @@ class crystal:
             as_Th = 0
             as_Sm = 0
 
-        #alpha ejection profile arrays for each isotope
-        #compute radial positions
+        # alpha ejection profile arrays for each isotope
+        # compute radial positions
         r_pos = (np.arange(nodes) + 0.5) * r_step
 
-        #create masks for each isotope to ensure no divide by zero or very near zero
+        # create masks for each isotope to ensure no divide by zero or very near zero
         mask_U238 = r_pos >= (radius - as_U238)
         mask_U235 = r_pos >= (radius - as_U235)
         mask_Th = r_pos >= (radius - as_Th)
         mask_Sm = r_pos >= (radius - as_Sm)
 
-        #safe division, only divides where mask is true
-        #still encounter RuntimeWarning because of the - r_pos term, but these get discarded anyway with the mask so can ignore them
-        #U238
+        # safe division, only divides where mask is true
+        # still encounter RuntimeWarning because of the - r_pos term, but these get discarded anyway with the mask so can ignore them
+        # U238
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             ejected_U238 = U238_atom * (
@@ -122,7 +122,7 @@ class crystal:
             )
         aej_U238 = np.where(mask_U238, ejected_U238, U238_atom)
 
-        #U235
+        # U235
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             ejected_U235 = U235_atom * (
@@ -137,7 +137,7 @@ class crystal:
             )
         aej_U235 = np.where(mask_U235, ejected_U235, U235_atom)
 
-        #Th
+        # Th
         if Th_atom == 0:
             aej_Th = np.zeros(nodes)
         else:
@@ -155,7 +155,7 @@ class crystal:
                 )
             aej_Th = np.where(mask_Th, ejected_Th, Th_atom)
 
-        #Sm
+        # Sm
         if Sm_atom == 0:
             aej_Sm = np.zeros(nodes)
         else:
@@ -173,12 +173,12 @@ class crystal:
                 )
             aej_Sm = np.where(mask_Sm, ejected_Sm, Sm_atom)
                 
-        #calculate alpha ejection correction factors for age equation
+        # calculate alpha ejection correction factors for age equation
         outer = (np.arange(1, nodes + 1) * r_step)**3
         inner = (np.arange(nodes) * r_step)**3
         vol = outer - inner
 
-        #weighted sums
+        # weighted sums
         nft_U238 = np.sum(vol * aej_U238)
         dft_U238 = np.sum(vol * U238_atom)  
         nft_U235 = np.sum(vol * aej_U235)
@@ -205,13 +205,13 @@ class crystal:
             dft_Sm   = np.sum(vol * Sm_atom)
             total_Sm = Sm_atom * np.sum(vol)
                 
-        #calculate fts
+        # calculate fts
         ft_U238 = nft_U238 / dft_U238
         ft_U235 = nft_U235 / dft_U235
         ft_Th = nft_Th / dft_Th
         ft_Sm = nft_Sm / dft_Sm
 
-        #store in a dictionary
+        # store in a dictionary
         corr_factors = {
             'total_U238':total_U238,
             'total_U235':total_U235,
@@ -285,11 +285,11 @@ class crystal:
             The 1D radial profile of diffused He (units of atoms/g).
 
         """
-        #damping parameters
+        # damping parameters
         M = 100
         initial_damp = 20
-        
-        He_profile = _CN_diffusion_core(
+
+        He_profile = _CN_diffusion_core_wrapper(
             nodes,
             r_step,
             tT_path,
@@ -378,18 +378,18 @@ class crystal:
             The 1D radial profile of diffused He in the lattice
 
         """
-        #unpack diff_parameters, D values have to be in units of micrometer**2/s
+        # unpack diff_parameters, D values have to be in units of micrometer**2/s
         D_sc = diff_parameters['D_sc']
         D_v = diff_parameters['D_v']
         kappa_1 = diff_parameters['kappa_1']
         kappa_2 = diff_parameters['kappa_2']
         f = diff_parameters['f']
 
-        #damping parameters
+        # damping parameters
         M = 100
         initial_damp = 20
 
-        #set up initial arrays
+        # set up initial arrays
         init_fast = np.asarray(init_fast_He, dtype=np.float64) if init_fast_He is not None else np.zeros(nodes)
         init_lat  = np.asarray(init_lat_He, dtype=np.float64) if init_lat_He is not None else np.zeros(nodes)
 
@@ -459,7 +459,7 @@ class crystal:
         fourier_set = 0.5
         dt_int = fourier_set * r_step**2 / D
 
-        #ensure damping steps don't produce negative times when dt_int is large, short-circuit if dt_int is large
+        # ensure damping steps don't produce negative times when dt_int is large, short-circuit if dt_int is large
         if dt_int > initial_damp + M:
             n_steps = int(dt / dt_int) + 1
             sub_tT = np.zeros((n_steps, 2))
@@ -467,7 +467,7 @@ class crystal:
             sub_tT[:, 1] = temp
             return sub_tT
 
-        #set up iterative Newton-Raphson solver for eq 24 from Britz et al. (2003)
+        # set up iterative Newton-Raphson solver for eq 24 from Britz et al. (2003)
         fourier_calc = D * dt / r_step**2
         beta_guess = 1.2
         f_beta = fourier_calc * (beta_guess**2 - 1) - (beta_guess**M - 1)
@@ -476,7 +476,7 @@ class crystal:
 
         beta_diff = beta_guess
 
-        #iterate to solve
+        # iterate to solve
         while abs(beta_diff) > tolerance:
             beta = beta_guess - f_beta / f_beta_prime
             beta_diff = beta_guess - beta
@@ -484,7 +484,7 @@ class crystal:
             f_beta = fourier_calc * (beta_guess**2 - 1) - (beta_guess**M - 1)
             f_beta_prime = 2 * fourier_calc * beta_guess - M * beta_guess**(M - 1)
 
-        #add on the initial damping steps
+        # add on the initial damping steps
         expansion_steps = initial_damp + M
         
         sub_tT = np.zeros((expansion_steps,2))
@@ -498,7 +498,7 @@ class crystal:
         delta_t = np.cumsum(beta**i_vals) * tau_1
         sub_tT[initial_damp:initial_damp + M - 1,0] = sub_tT[initial_damp - 1, 0] - delta_t
 
-        #add on temperatures
+        # add on temperatures
         sub_tT[:,1] = temp
                 
         return sub_tT
@@ -523,17 +523,17 @@ class crystal:
             The alpha ejection corrected (U-Th)/He date (in Ma)
 
         """
-        #get the guess to the 1000 year precision, date guess is in years
+        # get the guess to the 1000 year precision, date guess is in years
         tolerance = 1000.0
         date_guess = 100000000.0
         
-        #get Fts from the corr_factors dictionary
+        # get Fts from the corr_factors dictionary
         ft_U238 = corr_factors['total_U238'] * corr_factors['ft_U238']
         ft_U235 = corr_factors['total_U235'] * corr_factors['ft_U235']
         ft_Th = corr_factors['total_Th'] * corr_factors['ft_Th']
         ft_Sm = corr_factors['total_Sm'] * corr_factors['ft_Sm']
 
-        #set up Newton-Raphson equation
+        # set up Newton-Raphson equation
         f_date = (
             ft_U238 * (np.exp(lambda_238_yr * date_guess) - 1)
             + ft_U235 * (np.exp(lambda_235_yr * date_guess) - 1)
@@ -567,7 +567,7 @@ class crystal:
                 + ft_Sm * lambda_147_yr * np.exp(lambda_147_yr * date_guess)
             )
 
-        #convert to Ma
+        # convert to Ma
         corrected_date = corrected_date / 1000000
         
         return corrected_date
@@ -580,13 +580,13 @@ class crystal:
         ----------
 
         bulk_He_profile: 1D array of floats
-            Radial profile of diffused He in the bulk grain
+            Concentration profile of diffused He in the bulk grain
 
         Returns
         -------
 
         bulk_He_profile: 1D array of floats
-            Radial profile, zeroed out if concentration went negative
+            Concentration profile, zeroed out if concentration went negative
         
         total_bulk_He: float
             Total helium in atoms per spherical volume (base of 1/(4/3 * Pi))
@@ -635,7 +635,7 @@ class zircon(crystal):
         self._radius = radius
         self._log2_nodes = log2_nodes
         self._nodes = 2**log2_nodes + 1
-        #grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
+        # grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
         self._r_step = radius / (self._nodes + 0.5)
         self._r_vals = (np.arange(self._nodes) + 0.5) * self._r_step
         self._U_ppm = U_ppm
@@ -644,7 +644,7 @@ class zircon(crystal):
         self._relevant_tT = relevant_tT
         self._rho_r_array = rho_r_array
 
-        #compute alpha ejection profiles
+        # compute alpha ejection profiles
         self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm,self._corr_factors = self.zircon_alpha_ejection()
         self._no_aej_U238, self._no_aej_U235, self._no_aej_Th, self._no_aej_Sm, self._no_corr_factors = self.zircon_no_ejection()
 
@@ -659,6 +659,9 @@ class zircon(crystal):
     
     def get_r_step(self):
         return self._r_step
+    
+    def get_r_vals(self):
+        return self._r_vals
     
     def get_U_ppm(self):
         return self._U_ppm
@@ -726,7 +729,7 @@ class zircon(crystal):
         relevant_tT = self._relevant_tT
         rho_r_array = self._rho_r_array
 
-        #calculate dose in alpha/g at each time step
+        # calculate dose in alpha/g at each time step
         alpha_i = [
             8
             * U238_atom
@@ -749,12 +752,12 @@ class zircon(crystal):
             for i in range(np.size(relevant_tT, 0) - 2, -1, -1)
         ]
 
-        #multiple each row of the rho_r_array by alpha_i
+        # multiple each row of the rho_r_array by alpha_i
         alpha_e_array = (
             rho_r_array[: np.size(relevant_tT, 0) - 1, : np.size(relevant_tT, 0) - 1] * alpha_i
         )
 
-        #sum the columns of alpha_e_array to get the total damage at each time step
+        # sum the columns of alpha_e_array to get the total damage at each time step
         damage = np.sum(alpha_e_array, axis=1)
 
         return damage
@@ -777,28 +780,28 @@ class zircon(crystal):
             List of the diffusivities as a function of damage at each time step of relevant_tT
         
         """
-        #radius to micrometers
+        # radius to micrometers
         radius = self._radius
         #time in seconds
         relevant_tT = self._relevant_tT
 
-        #Guenthner et al. (2013) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
+        # Guenthner et al. (2013) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
         Ea_l = 165.0
         D0_l = 193188.0 * 10**8 
         D0_N17 = 0.0034 * 10**8
         Ea_N17 = 71.0 
 
-        #g amorphized per alpha event
+        # g amorphized per alpha event
         Ba = 5.48e-19
         interconnect = 3.0
 
-        #empirical constraints for damage chains from Ketcham et al. (2013) (https://doi.org/10.2138/am.2013.4249) 
-        #track surface to volume ratio in nm^-1 
+        # empirical constraints for damage chains from Ketcham et al. (2013) (https://doi.org/10.2138/am.2013.4249) 
+        # track surface to volume ratio in nm^-1 
         SV = 1.669 
-        #mean unidirectional length of travel until damage zone in a zircon with 1e14 alphas/g, in nm
+        # mean unidirectional length of travel until damage zone in a zircon with 1e14 alphas/g, in nm
         lint_0 = 45920.0
 
-        #calculate diffusivities at each time step, modified equation 8 in Guenthner et al. (2013, units are in micrometers2/s; minimal diffusivity allowed equivalent to zircons with 1e14 alphas/g), prevents divide by zero in diffusivity calculation
+        # calculate diffusivities at each time step, modified equation 8 in Guenthner et al. (2013, units are in micrometers2/s; minimal diffusivity allowed equivalent to zircons with 1e14 alphas/g), prevents divide by zero in diffusivity calculation
         diff_list = [
             (
                 radius**2 
@@ -895,17 +898,17 @@ class zircon(crystal):
             The total amount of helium in atoms.
         
         """
-        #calculate damage levels using guenthner_damage function
+        # calculate damage levels using guenthner_damage function
         if dam_model == 'guenthner':
             damage = self.guenthner_damage()
         
-        #get diff_list from guenthner_diffs method
+        # get diff_list from guenthner_diffs method
         if diff_model == 'guenthner':
             diff_list = self.guenthner_diffs(damage)
         elif diff_model == 'mp_diffusion':
             diff_list = self.mp_diffs(damage)[2]
             
-        #send it all to the CN_diffusion method
+        # send it all to the CN_diffusion method
         He_profile = self.CN_diffusion(
             self._nodes,
             self._r_step,
@@ -918,7 +921,7 @@ class zircon(crystal):
             init_He,
         )
 
-        #calculate date
+        # calculate date
         
         He_profile, total_He = self._integrate_profile(He_profile)
         final_damage = damage[-1]
@@ -957,23 +960,20 @@ class zircon(crystal):
         lat_diff_array = np.zeros(len(damage))
         bulk_diff_array = np.zeros(len(damage))
         
-        #radius in micrometers
-        radius = self._radius
-        
-        #time in seconds, temp in C
+        # time in seconds, temp in C
         relevant_tT = self._relevant_tT
 
-        #mass of amorphous material produced per alpha event (g/alpha)
-        #Palenik et al. 2003
+        # mass of amorphous material produced per alpha event (g/alpha)
+        # Palenik et al. 2003
         B_a = 5.48e-19
 
-        #mean intercept length of zircon with dose of 1e14 alphas/g (nm)
+        # mean intercept length of zircon with dose of 1e14 alphas/g (nm)
         l_int_0 = 45920
 
-        #surface area to volume ratio of damage capsule (cm-1)
+        # surface area to volume ratio of damage capsule (cm-1)
         SV = 1.669
 
-        #Guenthner et al. (XXXX) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
+        # Guenthner et al. (XXXX) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
         D0_z = 1130 * 10**8 
         D0_sc = 0.0186 * 10**8
         Ea_z = 165.68
@@ -986,32 +986,32 @@ class zircon(crystal):
         n_t = 0.37
 
         for i in range(len(damage)):
-            #average temp between time steps
+            # average temp between time steps
             temp_K = (relevant_tT[i, 1] + relevant_tT[i + 1, 1]) / 2
-            #tort parameters
+            # tort parameters
             f_a_DI = 1 - np.exp(-B_a * damage[i])**n_t
             l_int = (4.2 / (f_a_DI * SV)) - 2.5
             tau = (l_int_0 / l_int)**2
             D0_v = D0_z * (1 / tau)
 
-            #trap parameters
+            # trap parameters
             psi = (gamma * f_a_DI * np.exp(Ea_trap/(gas_constant * temp_K))) + 1
 
-            #lattice (volume) diffusivity
+            # lattice (volume) diffusivity
             D_v = D0_v * np.exp(-Ea_z / (gas_constant * temp_K)) / psi
             lat_diff_array[i] = D_v
 
-            #fast path (short-circuit) diffusivity
+            # fast path (short-circuit) diffusivity
             D_sc = D0_sc * np.exp(-Ea_sc / (gas_constant * temp_K))
             fast_diff_array[i] = D_sc
             
-            #fraction amorphous
+            # fraction amorphous
             f = 1 - ((1 + B_a * damage[i]) * np.exp(-(B_a * damage[i])))**n_sc
 
-            #treat kappa_1 as a constant, solve for kappa_2
+            # treat kappa_1 as a constant, solve for kappa_2
             kappa_2 = -kappa_1 * (k_star * f) / (1 - f)
 
-            #bulk diffusivity
+            # bulk diffusivity
             D_b = (
                 (1 / (kappa_1 - kappa_2)) * 
                 (-kappa_2 * D_sc + kappa_1 * D_v)
@@ -1070,8 +1070,8 @@ class zircon(crystal):
  
         """
 
-        #convert 1D profiles to radial position profiles
-        #reflects 1st node position as 0.5 * r_step from grain center
+        # convert 1D profiles to radial position profiles
+        # reflects 1st node position as 0.5 * r_step from grain center
         init_fast_He = init_fast_He * self._r_vals
         init_lat_He = init_lat_He  * self._r_vals
 
@@ -1151,8 +1151,9 @@ class zircon(crystal):
     
             """
 
-            #convert 1D profiles to radial position profiles
-            #reflects 1st node position as 0.5 * r_step from grain center
+            # convert 1D profiles to radial position profiles
+            # reflects 1st node position as 0.5 * r_step from grain center
+
             init_He = init_He * self._r_vals
 
             if eject:
@@ -1224,7 +1225,7 @@ class apatite(crystal):
         self._radius = radius
         self._log2_nodes = log2_nodes
         self._nodes = 2**log2_nodes + 1
-        #grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
+        # grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
         self._r_step = radius / (self._nodes + 0.5)
         self._r_vals = (np.arange(self._nodes) + 0.5) * self._r_step
         self._U_ppm = U_ppm
@@ -1233,7 +1234,7 @@ class apatite(crystal):
         self._relevant_tT = relevant_tT
         self._rho_r_array = rho_r_array
 
-        #compute alpha ejection profiles
+        # compute alpha ejection profiles
         self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm, self._corr_factors = self.apatite_alpha_ejection()
         self._no_aej_U238, self._no_aej_U235, self._no_aej_Th, self._no_aej_Sm, self._no_corr_factors = self.apatite_no_ejection()
 
@@ -1248,6 +1249,9 @@ class apatite(crystal):
     
     def get_r_step(self):
         return self._r_step
+    
+    def get_r_vals(self):
+        return self._r_vals
     
     def get_U_ppm(self):
         return self._U_ppm
@@ -1313,7 +1317,7 @@ class apatite(crystal):
         eta_q = 0.91
         L = 0.000815
         
-        #convert ppm to atoms/cc
+        # convert ppm to atoms/cc
         U235_vol = self._U_ppm * U235_ppm_atom * ap_density
         U238_vol = self._U_ppm * U238_ppm_atom * ap_density
         Th_vol = self._Th_ppm * Th_ppm_atom * ap_density
@@ -1322,7 +1326,7 @@ class apatite(crystal):
         relevant_tT = self._relevant_tT
         rho_r_array = self._rho_r_array
 
-        #rho v calculation, atoms/cc
+        # rho v calculation, atoms/cc
         rho_v = [
             U238_vol
             * (
@@ -1350,10 +1354,10 @@ class apatite(crystal):
             for i in range(np.size(relevant_tT, 0) - 2, -1, -1)
         ]
         
-        #sum the columns of each row of rho_r_array
+        # sum the columns of each row of rho_r_array
         rho_r = np.sum(rho_r_array, axis=1)
         
-        #e_rho_s calculation
+        # e_rho_s calculation
         damage = [
             eta_q * L * (lambda_f / lambda_238) * rho_v[i] * rho_r[i] 
             for i in range(np.size(relevant_tT, 0) - 1)
@@ -1452,15 +1456,15 @@ class apatite(crystal):
             The total amount of helium in atoms.
         
         """
-        #calculate damage levels using flowers_damage function
+        # calculate damage levels using flowers_damage function
         if dam_model == 'flowers':
             damage = self.flowers_damage()
 
-        #calculate diffusivities using flowers_diffs function
+        # calculate diffusivities using flowers_diffs function
         if diff_model == 'flowers':
             diff_list = self.flowers_diffs(damage)
 
-        #send it all to the CN_diffusion method
+        # send it all to the CN_diffusion method
         He_profile = self.CN_diffusion(
             self._nodes,
             self._r_step,
@@ -1473,7 +1477,7 @@ class apatite(crystal):
             init_He,
         )
 
-        #calculate date
+        # calculate date
         
         He_profile, total_He = self._integrate_profile(He_profile)
         final_damage = damage[-1]
@@ -1524,8 +1528,8 @@ class apatite(crystal):
     
             """
 
-            #convert 1D profiles to radial position profiles
-            #reflects 1st node position as 0.5 * r_step from grain center
+            # convert 1D profiles to radial position profiles
+            # reflects 1st node position as 0.5 * r_step from grain center
             init_He = init_He * self._r_vals
 
             if eject:

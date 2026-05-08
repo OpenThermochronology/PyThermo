@@ -104,14 +104,14 @@ class tT_model:
         grains = self._grain_in
         obs_data = self._obs_data
         
-        #don't assume that everyone will have the same column or row data frame names, use indexing throughout
+        # don't assume that everyone will have the same column or row data frame names, use indexing throughout
         num_grains = grains.shape[0]
         num_paths = np.size(tT_in, 1) // 2
         
-        #create 2D array for storing model output, with some error checking
+        # create 2D array for storing model output, with some error checking
         if comp_type == 'size':
-            #determine mean, maximum, and minimum grain size 
-            #if obs_data is present, use mean from measured, otherwise use grain size in grain_in
+            # determine mean, maximum, and minimum grain size 
+            # if obs_data is present, use mean from measured, otherwise use grain size in grain_in
             if obs_data is not None and std_grain == 0:
                 mean_size = np.mean(obs_data[:, 3])
                 max_size = mean_size + np.std(obs_data[:, 3])
@@ -125,7 +125,7 @@ class tT_model:
                 max_size = mean_size + std_grain
                 min_size = mean_size - std_grain
 
-            #now create the array
+            # now create the array
             if max_size > mean_size:
                 model_data = np.zeros((num_grains * 3, num_paths * 3))
             else:
@@ -138,22 +138,22 @@ class tT_model:
             print("Incorrect comparison type entered")
             return None
         
-        #calculate dates for each tT path
+        # calculate dates for each tT path
         for i in range(0, np.size(tT_in, 1), 2):
-            #not all tT paths will be the same length
-            #find the oldest time, use only that splice of the t and T columns
+            # not all tT paths will be the same length
+            # find the oldest time, use only that splice of the t and T columns
             non_zero = np.argwhere(tT_in[:, i])
             last_time = non_zero[-1][0]
             tT_slice = tT_in[: last_time + 1, i : i + 2]
             tT = tT_path(tT_slice, self._temp_precision)
 
-            #get rho_r annealing and relevant tT vectors, same for all grains for a given tT path
+            # get rho_r annealing and relevant tT vectors, same for all grains for a given tT path
             if 'guenthner' in grains.iloc[:, 8].values: 
                 zirc_anneal, zirc_tT = tT.guenthner_anneal()
             if 'flowers' in grains.iloc[:, 8].values: 
                 ap_anneal, ap_tT = tT.ketcham_anneal()
             
-            #calculate dates for each grain
+            # calculate dates for each grain
             for j in range(num_grains):
                 U_ppm = grains.iloc[j, 4]
                 Th_ppm = grains.iloc[j, 5]
@@ -161,7 +161,7 @@ class tT_model:
                 diff_model = grains.iloc[j, 7]
                 dam_model = grains.iloc[j, 8]
                 
-                #Cooperdock et al. (2019) eU approximation (https://doi.org/10.5194/gchron-1-17-2019)
+                # Cooperdock et al. (2019) eU approximation (https://doi.org/10.5194/gchron-1-17-2019)
                 eU_ppm = U_ppm + 0.238 * Th_ppm + 0.0012 * Sm_ppm
 
                 if grains.iloc[j,0] == 'apatite':
@@ -195,22 +195,22 @@ class tT_model:
                                 Sm_ppm,
                                 )
 
-                            #calculate dates
+                            # calculate dates
                             mean_date = mean_grain.ap_date(diff_model, dam_model)[0]
                             std_plus_date = std_plus_grain.ap_date(diff_model, dam_model)[0]
                             std_minus_date = std_minus_grain.ap_date(diff_model, dam_model)[0]
 
-                            #add dates to array
+                            # add dates to array
                             model_data[j, i * 3 // 2] = mean_date
                             model_data[j + num_grains, i * 3 // 2] = std_plus_date
                             model_data[j + 2 * num_grains, i * 3 // 2] = std_minus_date
 
-                            #add eU concentrations to array
+                            # add eU concentrations to array
                             model_data[j, i * 3 // 2 + 1] = eU_ppm
                             model_data[j + num_grains, i * 3 // 2 + 1] = eU_ppm
                             model_data[j + 2 * num_grains, i * 3 // 2 + 1] = eU_ppm
 
-                            #add grain size to array
+                            # add grain size to array
                             model_data[j, i * 3 // 2 + 2] = mean_size
                             model_data[j + num_grains, i * 3 // 2 + 2] = max_size
                             model_data[j + 2 * num_grains, i * 3 // 2 + 2] = min_size
@@ -226,21 +226,21 @@ class tT_model:
                                 Sm_ppm,
                             )
 
-                            #calculate date
+                            # calculate date
                             mean_date = mean_grain.ap_date(diff_model, dam_model)[0]
 
-                            #add date to array
+                            # add date to array
                             model_data[j, i * 3 // 2] = mean_date
 
-                            #add eU concentration to array
+                            # add eU concentration to array
                             model_data[j, i * 3 // 2 + 1] = eU_ppm
 
-                            #add grain size to array
+                            # add grain size to array
                             model_data[j, i * 3 // 2 + 2] = mean_size
                     elif comp_type == 'model':
                         
-                        #calculate date for each model type, set by model_num input
-                        #apatite only has one model currently as an option, place holder here for future options
+                        # calculate date for each model type, set by model_num input
+                        # apatite only has one model currently as an option, place holder here for future options
                         if model_num == 2:
 
                             mean_grain_1 = apatite(
@@ -266,15 +266,15 @@ class tT_model:
                             mean_date_1 = mean_grain_1.ap_date(diff_model, dam_model)[0]
                             mean_date_2 = mean_grain_2.ap_date(diff_model, dam_model)[0]
 
-                            #add date to array
+                            # add date to array
                             model_data[j, i * 3 // 2] = mean_date_1
                             model_data[j + num_grains, i * 3 // 2] = mean_date_2
 
-                            #add eU concentrations to array
+                            # add eU concentrations to array
                             model_data[j, i * 3 // 2 + 1] = eU_ppm
                             model_data[j + num_grains, i * 3 // 2 + 1] = eU_ppm
 
-                            #add grain size to array
+                            # add grain size to array
                             model_data[j, i * 3 // 2 + 2] = grains.iloc[j, 3]
                             model_data[j + num_grains, i * 3 // 2 + 2] = grains.iloc[j, 3]
 
@@ -310,22 +310,22 @@ class tT_model:
                                 Sm_ppm,
                             )
 
-                            #calculate dates
+                            # calculate dates
                             mean_date = mean_grain.zirc_date(diff_model, dam_model)[0]
                             std_plus_date = std_plus_grain.zirc_date(diff_model, dam_model)[0]
                             std_minus_date = std_minus_grain.zirc_date(diff_model, dam_model)[0]
 
-                            #add dates to array
+                            # add dates to array
                             model_data[j, i * 3 // 2] = mean_date
                             model_data[j + num_grains, i * 3 // 2] = std_plus_date
                             model_data[j + 2 * num_grains, i * 3 // 2] = std_minus_date
 
-                            #add eU concentrations to array
+                            # add eU concentrations to array
                             model_data[j, i * 3 // 2 + 1] = eU_ppm
                             model_data[j + num_grains, i * 3 // 2 + 1] = eU_ppm
                             model_data[j + 2 * num_grains, i * 3 // 2 + 1] = eU_ppm
 
-                            #add grain size to array
+                            # add grain size to array
                             model_data[j, i * 3 // 2 + 2] = mean_size
                             model_data[j + num_grains, i * 3 // 2 + 2] = max_size
                             model_data[j + 2 * num_grains, i * 3 // 2 + 2] = min_size
@@ -341,21 +341,21 @@ class tT_model:
                                 Sm_ppm,
                             )
 
-                            #calculate date
+                            # calculate date
                             mean_date = mean_grain.zirc_date(diff_model, dam_model)[0]
                 
-                            #add date to array
+                            # add date to array
                             model_data[j, i * 3 // 2] = mean_date
 
-                            #add eU concentration to array
+                            # add eU concentration to array
                             model_data[j, i * 3 // 2 + 1] = eU_ppm
 
-                            #add grain size to array
+                            # add grain size to array
                             model_data[j, i * 3 // 2 + 2] = mean_size
                     elif comp_type == 'model':
 
-                        #calculate date for each model type, set by model_num input
-                        #zircon currently has two options: 'guenthner' (traditional ZRDAAM) and 'mp_diffusion'
+                        # calculate date for each model type, set by model_num input
+                        # zircon currently has two options: 'guenthner' (traditional ZRDAAM) and 'mp_diffusion'
                         if model_num == 2:
 
                             mean_grain_1 = zircon(
@@ -381,15 +381,15 @@ class tT_model:
                             mean_date_1 = mean_grain_1.zirc_date('guenthner', dam_model)[0]
                             mean_date_2 = mean_grain_2.zirc_date('mp_diffusion', dam_model)[0]
 
-                            #add date to array
+                            # add date to array
                             model_data[j, i * 3 // 2] = mean_date_1
                             model_data[j + num_grains, i * 3 // 2] = mean_date_2
 
-                            #add eU concentrations to array
+                            # add eU concentrations to array
                             model_data[j, i * 3 // 2 + 1] = eU_ppm
                             model_data[j + num_grains, i * 3 // 2 + 1] = eU_ppm
 
-                            #add grain size to array
+                            # add grain size to array
                             model_data[j, i * 3 // 2 + 2] = grains.iloc[j, 3]
                             model_data[j + num_grains, i * 3 // 2 + 2] = grains.iloc[j, 3]
 
@@ -446,7 +446,7 @@ class tT_model:
         tT_in = self._tT_in
         obs_data = self._obs_data
 
-        #set up the figure with 2 subplots: time_temp  and date_eU
+        # set up the figure with 2 subplots: time_temp  and date_eU
         dateeU_fig, (time_temp, date_eU) = plt.subplots(2, 1, figsize=[10, 10], dpi=600)
 
         time_temp.set_xlabel('Time (Ma)')
@@ -454,13 +454,13 @@ class tT_model:
         date_eU.set_xlabel('eU concentration (ppm)')
         date_eU.set_ylabel('(U-Th)/He Date (Ma)')
 
-        #maximum values for setting plot axis dimensions
+        # maximum values for setting plot axis dimensions
         date_max = 0
         eU_max = 0
         time_max = 0
         temp_max = 0
 
-        #set up color strings
+        # set up color strings
         # default is that if greater than 8 date-eU/tT sets, switch to plasma gradational color scheme
         if colormap == 'default':
             if np.size(model_data, 1) / 3 <= 8:
@@ -487,11 +487,11 @@ class tT_model:
             scalar_map = mplcm.ScalarMappable(norm=color_norm, cmap=color_map)
             color_options = [scalar_map.to_rgba(i) for i in range(num_of_colors)]
 
-        #line option cycler for model comparisons
+        # line option cycler for model comparisons
         line_options = ['-', '--', ':', '-.']
 
-        #plot date-eU trends
-        #assumes that the date-eU trends for each tT plot are in 3-column groups, in this order: date, eU, grain size
+        # plot date-eU trends
+        # assumes that the date-eU trends for each tT plot are in 3-column groups, in this order: date, eU, grain size
         for i in range(0, np.size(model_data, 1), 3):
             
             if np.max(model_data[:, i]) > date_max: 
@@ -500,7 +500,7 @@ class tT_model:
                 eU_max = np.max(model_data[:, i + 1])
 
             if comp_type == 'size':
-                #each grain size comparison has three stacked date-eU trends, in this order: mean, +1s, -1s
+                # each grain size comparison has three stacked date-eU trends, in this order: mean, +1s, -1s
                 dates_mean = model_data[0:grain_num, i]
                 eUs_mean = model_data[0:grain_num, i + 1]
                 date_eU.plot(
@@ -534,18 +534,18 @@ class tT_model:
 
             elif comp_type == 'model':
                 date_eU.set_prop_cycle(linestyle=line_options)
-                #each diffusion and/or annealing model output is stacked from low to high eU, allows for variable # of model comps
+                # each diffusion and/or annealing model output is stacked from low to high eU, allows for variable # of model comps
                 for j in range(0, np.size(model_data, 0), grain_num):
                     model_dates = model_data[j : j + grain_num, i]
                     model_eUs = model_data[j : j + grain_num, i + 1]
                     date_eU.plot(model_eUs, model_dates, color=color_options[i // 3])
             
-        #plot tT paths
-        #assumes that the tT paths are in 2-column groups, in this order: time (young -> old), temp
+        # plot tT paths
+        # assumes that the tT paths are in 2-column groups, in this order: time (young -> old), temp
         for i in range(0, np.size(tT_in, 1), 2):
 
-            #not all tT paths will be the same length
-            #find the oldest time, use only that splice of the t and T columns
+            # not all tT paths will be the same length
+            # find the oldest time, use only that splice of the t and T columns
             non_zero = np.argwhere(tT_in[:, i])
             last_time = non_zero[-1][0]
             if np.max(tT_in[: last_time + 1, i]) > time_max: 
@@ -558,7 +558,7 @@ class tT_model:
 
             time_temp.plot(times, temps, color=color_options[i // 2])
 
-        #add in measured data, if any
+        # add in measured data, if any
         if obs_data is not None:
             date_eU.errorbar(
                 obs_data[:,2],
@@ -576,9 +576,9 @@ class tT_model:
             if np.max(obs_data[:, 2]) > eU_max: 
                 eU_max = np.max(obs_data[:, 2])
         
-        #set up axis dimensions
+        # set up axis dimensions
         
-        #scale it to inputs, round up to the nearest 10, 50, or 250 and add a bit more
+        # scale it to inputs, round up to the nearest 10, 50, or 250 and add a bit more
         if date_max < 100:
             date_max = int(np.ceil(date_max / 10) * 10) + 10
         elif date_max < 500:
@@ -600,7 +600,7 @@ class tT_model:
         else:
             time_max = int(np.ceil(time_max / 250) * 250) + 250
 
-        #round up to the nearest 50 for temperature
+        # round up to the nearest 50 for temperature
         temp_max = int(np.ceil(temp_max / 50) * 50)
 
         time_temp.set_xticks(np.arange(0, time_max, time_max / 10))
@@ -640,8 +640,8 @@ class tT_model:
         eject: optional boolean
             Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
 
-        init_profile: 1D array of floats
-            User defined initial profile (1D, radial) of helium concentration. Default is 'None'.
+        init_profile: optional 1D array of floats
+            User defined initial profile of helium concentration in 1D from grain center to rim. It should be noted that lower-level diffusion solvers require units of concentration per radial position (i.e. in u, where u = concentration * radial position), but the conversion is done in the profiler methods with the expectation that users will more commonly have initial profiles in terms of simply concentration. Default is 'None'.
 
         grain_diffs: optional 3 column array
             A 3 column array that contains user-defined fast-path diffusivities (1st column), lattice diffusivities (2nd column), and bulk diffusivities (3rd column). Number of rows must match the number of heating step and diffusivities must be matched to temperature. Default is None, which allows the function to assign predetermined diffusivities in the case of multi-path diffusion.
@@ -663,11 +663,11 @@ class tT_model:
         grains = self._grain_in
 
 
-        #constants for the e_rho_s calculation, as defined in Flowers et al. (2009)
+        # constants for the e_rho_s calculation, as defined in Flowers et al. (2009)
         eta_q = 0.91
         L = 0.000815
 
-        #constants for dose f_a calculation for multi-path model, as defined by Guenthner et al. (2013)
+        # constants for dose f_a calculation for multi-path model, as defined by Guenthner et al. (2013)
         B_a = 5.48e-19 
         n = 10
 
@@ -687,7 +687,7 @@ class tT_model:
             diff_model = grains.iloc[i, 7]
             dam_model = grains.iloc[i, 8]
             
-            #calculate dose for the grain
+            # calculate dose for the grain
             t_dose = dose_age * sec_per_myr
             U238 = U_ppm * U238_ppm_atom
             U235 = U_ppm * U235_ppm_atom
@@ -707,8 +707,8 @@ class tT_model:
                 * (np.exp(lambda_147 * t_dose) - 1)
             )
 
-            #calculate e_rho_s for the grain
-            #convert ppm to atoms/cc
+            # calculate e_rho_s for the grain
+            # convert ppm to atoms/cc
             U235_vol = U235 * ap_density
             U238_vol = U238 * ap_density
             Th_vol = Th232 * ap_density
@@ -730,7 +730,7 @@ class tT_model:
             
             e_rho_s = eta_q * L * (lambda_f / lambda_238) * rho_v
 
-            #determine fraction amorphous, needed to distribute He atoms in multi-path model
+            # determine fraction amorphous, needed to distribute He atoms in multi-path model
             f_a = 1 - ((1 + B_a * dose) * np.exp(-(B_a * dose)))**n
             diff_params['f'] = f_a              
 
@@ -757,9 +757,9 @@ class tT_model:
             else:
                 return None
             
-            #create the initial profile, if no profile provided
+            # create the initial profile, if no profile provided
             if init_profile is None:
-                #create production lists that consider (or don't) alpha ejection
+                # create production lists that consider (or don't) alpha ejection
                 if eject:
                     aej_U238, aej_U235, aej_Th, aej_Sm, _ = model_grain.get_aej()
                 else:
@@ -785,7 +785,7 @@ class tT_model:
             else:
                 init_He = init_profile
                 
-            #decide how to distribute the helium among pathways for the initial time step
+            # decide how to distribute the helium among pathways for the initial time step
             if diff_params['init_style'] == 'distribute':
                 init_fast_He = f_a * init_He
                 init_lat_He = (1 - f_a) * init_He
@@ -796,40 +796,40 @@ class tT_model:
                 init_fast_He = init_He
                 init_lat_He = 0 * init_He
 
-            #calculate the total amount of initial He, accounting for alpha ejected profiles
-            #convert He profile into a spherical function for integration
+            # calculate the total amount of initial He, accounting for alpha ejected profiles
+            # convert He profile into a spherical function for integration
             _, total_init_He = model_grain._integrate_profile(init_He)
             frac_loss_pre = 0
 
-            #establish arrays to store frac loss and profile data
+            # establish arrays to store frac loss and profile data
             frac_loss_array = np.zeros((np.size(tT_in, 0), 3))
             profiles = np.zeros((model_grain.get_nodes(), 3))
 
-            #set diffused profiles for first tT step
+            # set diffused profiles for first tT step
             fast_He = init_fast_He
             lat_He = init_lat_He
             bulk_He = init_He
 
-            #create a 2 row time-step array for each segment of the step-heating recipe
+            # create a 2 row time-step array for each segment of the step-heating recipe
             diff_tT = np.zeros((2, 2))
 
-            #calculate fractional loss for each segment of the step-heating recipe
+            # calculate fractional loss for each segment of the step-heating recipe
             for j in range(np.size(tT_in, 0)):             
                 
                 time = tT_in[j, 0]
                 temp = tT_in[j, 1]
 
-                #convert temp in Celsius to temp in Kelvin
+                # convert temp in Celsius to temp in Kelvin
                 diff_tT[0, 0] = time
                 diff_tT[0, 1] = temp + 273.15
                 diff_tT[1, 1] = temp + 273.15
 
                 model_grain.set_relevant_tT(diff_tT)
 
-                #set diffusion model, 'MP' for multi-path, 'CN' for simple Crank-Nicolson
+                # set diffusion model, 'MP' for multi-path, 'CN' for simple Crank-Nicolson
                 if diff_type == 'MP':
 
-                    #determine diffusivities for diffused grain, add to parameters dictionary
+                    # determine diffusivities for diffused grain, add to parameters dictionary
                     if grain_diffs is not None:
                         fast_diffs = np.array([grain_diffs[j, 0]])
                         lat_diffs = np.array([grain_diffs[j, 1]])
@@ -840,7 +840,7 @@ class tT_model:
                     diff_params['D_sc'] = fast_diffs
                     diff_params['D_v'] = lat_diffs
 
-                    #perform multi-path diffusion and get the various diffusion profiles
+                    # perform multi-path diffusion and get the various diffusion profiles
                     bulk_He, fast_He, lat_He, total_bulk_He = model_grain.mp_profile(
                         diff_params, 
                         tolerance,
@@ -851,7 +851,7 @@ class tT_model:
                     )
                 elif diff_type == 'CN':
 
-                    #determine diffusivities for diffused grain
+                    # determine diffusivities for diffused grain
                     if diff_model == 'guenthner':
                         bulk_diffs = model_grain.guenthner_diffs([dose])
                     elif diff_model == 'mp_diffusion':
@@ -861,7 +861,7 @@ class tT_model:
                     else:
                         return None
                     
-                    #perform CN diffusion and get the diffusion profile
+                    # perform CN diffusion and get the diffusion profile
                     bulk_He, total_bulk_He = model_grain.CN_profile(
                         bulk_diffs, 
                         bulk_He, 
@@ -872,10 +872,10 @@ class tT_model:
                     fast_He = 0
                     lat_He = 0
                     
-                #calculate fractional loss
+                # calculate fractional loss
                 frac_loss_bulk =  1 - total_bulk_He/total_init_He                
                 
-                #calculate D/a2 from frac loss, save ln(D/a2) value to frac loss array for this grain
+                # calculate D/a2 from frac loss, save ln(D/a2) value to frac loss array for this grain
                 frac_loss_array[j, 0] = 1e4/(temp + 273.15)
                 frac_loss_array[j, 1] = frac_loss_bulk
                 D_a2 = self.frac_loss(frac_loss_bulk, frac_loss_pre, time)
@@ -884,16 +884,16 @@ class tT_model:
                 else:
                     frac_loss_array[j, 2] = np.log(D_a2)
 
-                #fractional loss for next step-heating segment
+                # fractional loss for next step-heating segment
                 frac_loss_pre = frac_loss_bulk
            
             
-            #concentration profiles
+            # concentration profiles
             profiles[:, 0] = bulk_He
             profiles[:, 1] = fast_He
             profiles[:, 2] = lat_He
             
-            #save arrhenius and profile list for this grain to array of lists for all grains
+            # save arrhenius and profile list for this grain to array of lists for all grains
             frac_loss_data.append(frac_loss_array)
             profile_data.append(profiles)
 
@@ -924,7 +924,7 @@ class tT_model:
             The diffusivity of an object calculated from its fractional loss, normalized to size. Units of 1/s.
         '''
 
-        #guard against exhausted gas, no meaningful D/a2 to compute
+        # guard against exhausted gas, no meaningful D/a2 to compute
         if frac >= 1.0 or frac_pre >= 1.0 or frac == frac_pre:
             return np.nan
 

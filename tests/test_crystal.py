@@ -1,3 +1,9 @@
+"""
+test_crystal.py
+
+Tests for tT_crystal.py functions.
+"""
+
 import pythermo as pyt
 import pytest
 import numpy as np
@@ -5,16 +11,16 @@ import math
 
 @pytest.fixture(scope='session', autouse=True)
 def warmup_numba():
-    #Force Numba JIT compilation once before any tests run, using a small grain.
+    # Force Numba JIT compilation once before any tests run, using a small grain.
     tT_in = np.array([[0, 20], [100, 50], [200, 20]])
     tT = pyt.tT_path(tT_in)
     
-    #warmup guenthner path
+    # warmup guenthner path
     zirc_anneal, zirc_tT = tT.guenthner_anneal()
     zirc = pyt.zircon(30, 6, zirc_tT, zirc_anneal, 100, 50)
     zirc.zirc_date('guenthner', 'guenthner')
     
-    #warmup flowers path
+    # warmup flowers path
     ap_anneal, ap_tT = tT.ketcham_anneal()
     ap = pyt.apatite(30, 6, ap_tT, ap_anneal, 100, 50, Sm_ppm=10)
     ap.ap_date('flowers', 'flowers')
@@ -64,7 +70,7 @@ def zirc_no_sm():
         Sm_ppm=0
     )
 
-#alpha ejection tests
+# alpha ejection tests
 
 def test_apatite_alpha_ejection(ap):
     aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = ap.apatite_alpha_ejection()
@@ -129,7 +135,7 @@ def test_zero_sm_alpha_ejection(zirc_no_sm):
     assert corr_factors['total_Sm'] == 0.0
     assert corr_factors['ft_Sm'] == 0.0 
 
-#diffusion solver tests
+# diffusion solver tests
 
 def test_ap_CN_diffusion(ap):
     
@@ -210,15 +216,15 @@ def test_mp_diffs(zirc):
     assert np.any(lat_diffs <= 0) == False
     assert np.any(bulk_diffs <= 0) == False
     
-    #fast path should be faster than lattice
+    # fast path should be faster than lattice
     assert np.all(fast_diffs >= lat_diffs)
 
-#profile wrapper tests
+# profile wrapper tests
 
 def test_zirc_CN_profile(zirc):
     damage = zirc.guenthner_damage()
     diffs = zirc.guenthner_diffs(damage)
-    init_He = zirc._aej_U238  #use a dummy alpha ejection profile as initial condition
+    init_He = zirc._aej_U238  # use a dummy alpha ejection profile as initial condition
     
     bulk_He, total_He = zirc.CN_profile(diffs, init_He)
     bulk_He = np.array(bulk_He)
@@ -230,7 +236,7 @@ def test_zirc_CN_profile(zirc):
 def test_ap_CN_profile(ap):
     damage  = ap.flowers_damage()
     diffs   = ap.flowers_diffs(damage)
-    init_He = ap._aej_U238  #use a dummy alpha ejection profile as initial condition
+    init_He = ap._aej_U238  # use a dummy alpha ejection profile as initial condition
 
     bulk_He, total_He = ap.CN_profile(diffs, init_He)
     bulk_He = np.array(bulk_He)
@@ -239,7 +245,7 @@ def test_ap_CN_profile(ap):
     assert np.any(bulk_He < 0) == False
     assert total_He >= 0
 
-#He date method tests
+# He date method tests
 
 def test_ap_He_date(ap):
     aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = ap.apatite_alpha_ejection()
@@ -320,17 +326,17 @@ def test_ap_date(ap):
     assert ap_date > 0
     assert ap_date < 500
 
-#integration test
+# integration test
 
 def test_integrate_profile_negative(zirc):
-    #passing a profile with large negatives should return zeros
+    # passing a profile with large negatives should return zeros
     bad_profile = np.full(zirc.get_nodes(), -1e10)
     profile, total = zirc._integrate_profile(bad_profile)
     
     assert total == 0.0
     assert np.all(profile == 0)
 
-#getter method tests
+# getter method tests
 
 def test_zirc_getters(zirc):
     assert zirc.get_radius() == 60

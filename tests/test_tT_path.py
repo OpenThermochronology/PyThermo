@@ -1,3 +1,9 @@
+"""
+test_tT_path.py
+
+Tests for tT_path.py functions.
+"""
+
 import pythermo as pyt
 import pytest
 import numpy as np
@@ -21,10 +27,10 @@ def test_tT_interpolate_expands(tT):
 def test_tT_interpolate_endpoints(tT):
     interp_tT = tT.tT_interpolate()
     
-    #time should start at 0
+    # time should start at 0
     assert interp_tT[-1, 0] == 0.0
     
-    #temperature endpoints should match input (converted to Kelvin)
+    # temperature endpoints should match input (converted to Kelvin)
     assert interp_tT[-1, 1] == pytest.approx(20 + 273.15)
 
 def test_tT_interpolate_precision():
@@ -36,7 +42,7 @@ def test_tT_interpolate_precision():
     interp_coarse = tT_coarse.tT_interpolate()
     interp_fine   = tT_fine.tT_interpolate()
     
-    #finer precision should produce more time steps
+    # finer precision should produce more time steps
     assert np.size(interp_fine, 0) > np.size(interp_coarse, 0)
 
 def test_guenthner_anneal(tT):
@@ -65,7 +71,7 @@ def test_anneal_bad_kinetics(tT):
     with pytest.raises(ValueError):
         tT.anneal([1.0, 2.0, 3.0])  #too few kinetics values
 
-#getter tests
+# getter tests
 
 def test_tT_getters(tT):
     tT_in = np.array([[0, 20], [250, 150], [500, 20]])
