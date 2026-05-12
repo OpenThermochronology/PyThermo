@@ -776,20 +776,20 @@ class zircon(crystal):
         Returns
         -------
         
-        diff_list: list of floats
-            List of the diffusivities as a function of damage at each time step of relevant_tT
+        diff_array: 1D array of floats
+            Diffusivities as a function of damage at each time step of relevant_tT
         
         """
         # radius to micrometers
         radius = self._radius
-        #time in seconds
+        # time in seconds, temp in K
         relevant_tT = self._relevant_tT
 
         # Guenthner et al. (2013) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
         Ea_l = 165.0
         D0_l = 193188.0 * 10**8 
-        D0_N17 = 0.0034 * 10**8
-        Ea_N17 = 71.0 
+        D0_N17 = 0.006367 * 10**8
+        Ea_N17 = 70.74 
 
         # g amorphized per alpha event
         Ba = 5.48e-19
@@ -801,70 +801,32 @@ class zircon(crystal):
         # mean unidirectional length of travel until damage zone in a zircon with 1e14 alphas/g, in nm
         lint_0 = 45920.0
 
-        # calculate diffusivities at each time step, modified equation 8 in Guenthner et al. (2013, units are in micrometers2/s; minimal diffusivity allowed equivalent to zircons with 1e14 alphas/g), prevents divide by zero in diffusivity calculation
-        diff_list = [
-            (
-                radius**2 
-                * (
-                    (
-                        (
-                            radius**2
-                            * np.exp(-Ba * damage[i] * interconnect) ** 3
-                            * (
-                                lint_0
-                                / (4.2 / ((1 - np.exp(-Ba * damage[i])) * SV) - 2.5)
-                            )
-                                ** 2
-                        ) 
-                        / (
-                            D0_l 
-                            * np.exp(
-                                -Ea_l
-                                / (
-                                    gas_constant
-                                    * ((relevant_tT[i, 1] + relevant_tT[i + 1, 1]) / 2)
-                                )
-                            )
-                        )
-                    ) 
-                    + (
-                        (radius**2 * (1 - np.exp(-Ba * damage[i] * interconnect))) ** 3 
-                        / (
-                            D0_N17
-                            * np.exp(
-                                -Ea_N17
-                                / (
-                                    gas_constant
-                                    * ((relevant_tT[i, 1] + relevant_tT[i + 1, 1]) / 2)
-                                )
-                            )
-                        )
-                    )
-                )
-                ** -1 
-                if damage[i] >= 10**14 
-                else radius**2 
-                * (
-                    (
-                        radius**2
-                        / (
-                            D0_l 
-                            * np.exp(
-                                -Ea_l
-                                / (
-                                    gas_constant
-                                    *((relevant_tT[i, 1] + relevant_tT[i + 1, 1]) / 2)
-                                )
-                            )
-                        )
-                    )
-                )
-                **-1
-            )
-            for i in range(len(damage))
-        ]
+        # mean temperature (in K) across each step of tT
+        mean_temp = (relevant_tT[:-1, 1] + relevant_tT[1:, 1]) / 2
+
+        # shared exponential terms computed once for the whole damage array
+        exp_fa_tort = np.exp(-Ba * damage)
+        exp_fa_prime = np.exp(-Ba * damage * interconnect)
+
+        #tau array
+        tau = (lint_0 / (4.2 / ((1 - exp_fa_tort) * SV) - 2.5))**2
+
+        # Arrhenius equations for D_l and D_N17 arrays
+        D_l = D0_l * np.exp(-Ea_l / (gas_constant * mean_temp))
+        D_N17 = D0_N17 * np.exp(-Ea_N17 / (gas_constant * mean_temp))
+
+        # calculate diffusivities at each time step using equation 8 in Guenthner et al. (2013), units are in micrometers2/s
+        fc_prime_term = (1 - (1 - exp_fa_prime)) / ((1/tau) * (D_l / (radius * (1 - (1 - exp_fa_prime)))**2))
+        fa_prime_term = (1 - exp_fa_prime) / (D_N17 / (radius * (1 - exp_fa_prime))**2)
+        diff_damaged = radius**2 / (fa_prime_term + fc_prime_term)
+
+        # minimal diffusivity allowed equivalent to zircons with 1e14 alphas/g, prevents divide by zero in diffusivity calculation
+        diff_undamaged = D_l
+
+        #determine if we're below the 1e14 alphas/g cutoff
+        diff_array = np.where(damage >= 1e14, diff_damaged, diff_undamaged)
     
-        return diff_list
+        return diff_array
             
     def zirc_date(self, diff_model, dam_model, init_He = None):
         """
@@ -902,18 +864,18 @@ class zircon(crystal):
         if dam_model == 'guenthner':
             damage = self.guenthner_damage()
         
-        # get diff_list from guenthner_diffs method
+        # get diff_array from guenthner_diffs method
         if diff_model == 'guenthner':
-            diff_list = self.guenthner_diffs(damage)
+            diff_array = self.guenthner_diffs(damage)
         elif diff_model == 'mp_diffusion':
-            diff_list = self.mp_diffs(damage)[2]
+            diff_array = self.mp_diffs(damage)[2]
             
         # send it all to the CN_diffusion method
         He_profile = self.CN_diffusion(
             self._nodes,
             self._r_step,
             self._relevant_tT,
-            diff_list,
+            diff_array,
             self._aej_U238,
             self._aej_U235,
             self._aej_Th,
@@ -956,11 +918,7 @@ class zircon(crystal):
             Array of the bulk diffusivities as a function of damage at each time step of relevant_tT. Length is one less than the number of rows in relevant_tT (because last time step is 0). Diffusivities are in micrometers**2/s.
         
         """
-        fast_diff_array = np.zeros(len(damage))
-        lat_diff_array = np.zeros(len(damage))
-        bulk_diff_array = np.zeros(len(damage))
-        
-        # time in seconds, temp in C
+        # temp in K
         relevant_tT = self._relevant_tT
 
         # mass of amorphous material produced per alpha event (g/alpha)
@@ -985,38 +943,39 @@ class zircon(crystal):
         n_sc = 7.038
         n_t = 0.37
 
-        for i in range(len(damage)):
-            # average temp between time steps
-            temp_K = (relevant_tT[i, 1] + relevant_tT[i + 1, 1]) / 2
-            # tort parameters
-            f_a_DI = 1 - np.exp(-B_a * damage[i])**n_t
-            l_int = (4.2 / (f_a_DI * SV)) - 2.5
-            tau = (l_int_0 / l_int)**2
-            D0_v = D0_z * (1 / tau)
+        # mean temperature (in K) across each step of tT
+        mean_temp = (relevant_tT[:-1, 1] + relevant_tT[1:, 1]) / 2
 
-            # trap parameters
-            psi = (gamma * f_a_DI * np.exp(Ea_trap/(gas_constant * temp_K))) + 1
+        # tort parameter arrays
+        f_a_DI = 1 - np.exp(-B_a * damage)**n_t
+        l_int = (4.2 / (f_a_DI * SV)) - 2.5
+        tau = (l_int_0 / l_int)**2
+        D0_v = D0_z * (1 / tau)
 
-            # lattice (volume) diffusivity
-            D_v = D0_v * np.exp(-Ea_z / (gas_constant * temp_K)) / psi
-            lat_diff_array[i] = D_v
+        # trap parameter array
+        psi = (gamma * f_a_DI * np.exp(Ea_trap/(gas_constant * mean_temp))) + 1
 
-            # fast path (short-circuit) diffusivity
-            D_sc = D0_sc * np.exp(-Ea_sc / (gas_constant * temp_K))
-            fast_diff_array[i] = D_sc
-            
-            # fraction amorphous
-            f = 1 - ((1 + B_a * damage[i]) * np.exp(-(B_a * damage[i])))**n_sc
+        # lattice (volume) diffusivity array
+        lat_diff_array = D0_v * np.exp(-Ea_z / (gas_constant * mean_temp)) / psi
 
-            # treat kappa_1 as a constant, solve for kappa_2
-            kappa_2 = -kappa_1 * (k_star * f) / (1 - f)
+        # fast path diffusivity array
+        fast_diff_array = D0_sc * np.exp(-Ea_sc / (gas_constant * mean_temp))
 
-            # bulk diffusivity
-            D_b = (
-                (1 / (kappa_1 - kappa_2)) * 
-                (-kappa_2 * D_sc + kappa_1 * D_v)
-            )
-            bulk_diff_array[i] = D_b
+        # fraction amorphous
+        f = 1 - ((1 + B_a * damage) * np.exp(-(B_a * damage)))**n_sc
+
+        # protect against values of f = 1, which blows up kappa_2
+        f = np.clip(f, 0, 1 - 1e-10)
+
+        # solve for kappa_2
+        kappa_2 = -kappa_1 * (k_star * f) / (1 - f)
+
+        # bulk diffusivity array
+        bulk_diff_array = (
+            (1 / (kappa_1 - kappa_2)) * 
+            (-kappa_2 * fast_diff_array + kappa_1 * lat_diff_array)
+        )
+
         
         return fast_diff_array, lat_diff_array, bulk_diff_array
 
@@ -1379,49 +1338,31 @@ class apatite(crystal):
         Returns
         -------
         
-        diff_list: list of floats
-            List of the diffusivities as a function of damage at each time step of relevant_tT. Units are in micrometers2/s.
+        diff_array: 1D array of floats
+            Diffusivities as a function of damage at each time step of relevant_tT. Units are in micrometers2/s.
         
         """
-        #Flowers et al. 2009 damage-diffusivity equation parameters
-        omega = 10**-22
-        psi = 10**-13
-        E_trap = 34.0  # kJ/mol
-        E_L = 122.3  # kJ/mol
+        # Flowers et al. 2009 damage-diffusivity equation parameters
+        omega = 1e-22
+        psi = 1e-13
+        E_trap = 34.0   # kJ/mol
+        E_L = 122.3     # kJ/mol
         D0_L_a2 = np.exp(9.733)  # 1/s
 
-        #convert D0_L_a2 to micrometers2/s using crystal radius
+        # convert D0_L_a2 to micrometers2/s using crystal radius
         D0_L = D0_L_a2 * self._radius**2
 
         relevant_tT = self._relevant_tT
 
-        #calculate diffusivities at each time step, equation 8 in Flowers et al. (2009), units are in micrometers2/s
-        diff_list = [
-            (
-                D0_L 
-                * np.exp(
-                    -E_L
-                    / (gas_constant * 0.5 * (relevant_tT[i, 1] + relevant_tT[i + 1,1]))
-                    )
-            )
-            / (
-                (
-                    (psi * damage[i] + omega * damage[i] ** 3) 
-                    * np.exp(
-                        E_trap
-                        / (
-                            gas_constant
-                            * 0.5
-                            * (relevant_tT[i, 1] + relevant_tT[i + 1, 1])
-                        )
-                    )
-                ) 
-                + 1
-            ) 
-            for i in range(len(damage))
-        ]
+        # mean temperature across each step in tT
+        mean_temp = (relevant_tT[:-1, 1] + relevant_tT[1:, 1]) / 2
 
-        return diff_list
+        #calculate diffusivities at each time step, equation 8 in Flowers et al. (2009), units are in micrometers2/s
+        numerator = D0_L * np.exp(-E_L / (gas_constant * mean_temp))
+        trap_factor = (psi * damage + omega * damage**3) * np.exp(E_trap / (gas_constant * mean_temp))
+        diff_array = numerator / (trap_factor + 1)
+
+        return diff_array
     
     def ap_date(self, diff_model, dam_model, init_He = None):
         """

@@ -706,7 +706,7 @@ class tT_model:
                 + Sm147
                 * (np.exp(lambda_147 * t_dose) - 1)
             )
-
+            
             # calculate e_rho_s for the grain
             # convert ppm to atoms/cc
             U235_vol = U235 * ap_density
@@ -853,7 +853,9 @@ class tT_model:
 
                     # determine diffusivities for diffused grain
                     if diff_model == 'guenthner':
-                        bulk_diffs = model_grain.guenthner_diffs([dose])
+                        bulk_diffs = model_grain.guenthner_diffs(dose)
+                        if j == 1:
+                            print(bulk_diffs, temp, time)
                     elif diff_model == 'mp_diffusion':
                         bulk_diffs = model_grain.mp_diffs([dose])[2]
                     elif diff_model == 'flowers':
