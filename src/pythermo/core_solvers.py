@@ -365,13 +365,12 @@ def _CN_diffusion_core_banded(
 
             dt_int = tT_path[i, 0] - tT_path[i + 1, 0]
             fourier = (diffs[i] * dt_int) / r_step**2
-
             if fourier > 0.5 and divide:
                 temp = (tT_path[i, 1] + tT_path[i + 1, 1]) / 2
                 sub_tT_path = _divide_tT(diffs[i], dt_int, temp, r_step, M, initial_damp)
             else:
                 sub_tT_path = tT_path[i:i + 2, :]
-
+                
             for j in range(sub_tT_path.shape[0] - 1):
                 t_old = sub_tT_path[j, 0]
                 t_young = sub_tT_path[j + 1, 0]

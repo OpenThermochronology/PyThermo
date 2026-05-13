@@ -618,10 +618,11 @@ class tT_model:
             diff_params,
             diff_type, 
             tolerance, 
-            eject='True', 
+            eject=True, 
             init_profile=None, 
             grain_diffs=None, 
-            log2_nodes=13
+            log2_nodes=13,
+            divide=True,
             ):
         '''
         Calculates fractional loss data from step-heating experiment. Corresponding t-T recipe for step-heating needs to be in units of seconds and degrees Celsius. These data can be used for model Arrhenius curves or a Rstep/Rbulk vs. frac_3He data set as used in 4He/3He thermochronomtery. Intended for use with the numerical solution for multi-path diffusion as presented in Guenthner et al. (2026) (doi pending), but simple Crank-Nicolson is also an option.
@@ -648,6 +649,9 @@ class tT_model:
         
         log2_nodes: optional int
             The number of nodes (2**log2_nodes + 1) used in the finite difference scheme. Default is 13 (8192 nodes + 1).
+
+        divide: option boolean
+            Allows for subdivision of the tT path. Default is 'True', meaning the tT path will be subdivided if the Fourier number is larger than 0.5 for a given step.
             
         Returns
         -------
@@ -693,7 +697,7 @@ class tT_model:
             U235 = U_ppm * U235_ppm_atom
             Th232 = Th_ppm * Th_ppm_atom
             Sm147 = Sm_ppm * Sm_ppm_atom
-            dose = (
+            dose = np.float64(
                 8 
                 * U238
                 * (np.exp(lambda_238 * t_dose) - 1) 
@@ -835,7 +839,7 @@ class tT_model:
                         lat_diffs = np.array([grain_diffs[j, 1]])
                         bulk_diffs = np.array([grain_diffs[j, 2]])
                     else:
-                        fast_diffs, lat_diffs, bulk_diffs = model_grain.mp_diffs([dose])
+                        fast_diffs, lat_diffs, bulk_diffs = model_grain.mp_diffs(dose)
 
                     diff_params['D_sc'] = fast_diffs
                     diff_params['D_v'] = lat_diffs
@@ -857,9 +861,9 @@ class tT_model:
                         if j == 1:
                             print(bulk_diffs, temp, time)
                     elif diff_model == 'mp_diffusion':
-                        bulk_diffs = model_grain.mp_diffs([dose])[2]
+                        bulk_diffs = model_grain.mp_diffs(dose)[2]
                     elif diff_model == 'flowers':
-                        bulk_diffs = model_grain.flowers_diffs([e_rho_s])
+                        bulk_diffs = model_grain.flowers_diffs(e_rho_s)
                     else:
                         return None
                     
@@ -869,7 +873,7 @@ class tT_model:
                         bulk_He, 
                         eject, 
                         produce = False,
-                        divide = True,
+                        divide=divide,
                     )
                     fast_He = 0
                     lat_He = 0

@@ -298,10 +298,10 @@ def test_low_temp_gives_near_zero_loss():
     assert fl[0][-1, 1] < 0.01
 
 def test_high_temp_long_step_approaches_full_loss():
-    tT = np.array([[1e10, 1000.0]])           # very long step
+    tT = np.array([[60*60*24*30, 1000.0]])           # very long step, 30 days in seconds
     grains = make_grains()
     model2 = pyt.tT_model(grains, tT)
-    fl, _ = model2.step_degas(make_diff_params(), 'CN', 1e-6)
+    fl, _ = model2.step_degas(make_diff_params(), 'CN', 1e-6, divide=False)
     assert fl[0][0, 1] > 0.95
 
 def test_10000_over_T_column_correct():

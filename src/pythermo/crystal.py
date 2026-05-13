@@ -729,34 +729,26 @@ class zircon(crystal):
         relevant_tT = self._relevant_tT
         rho_r_array = self._rho_r_array
 
-        # calculate dose in alpha/g at each time step
-        alpha_i = [
-            8
-            * U238_atom
-            * (
-                np.exp(lambda_238 * relevant_tT[i, 0])
-                - np.exp(lambda_238 * relevant_tT[i + 1,0])
-            )
-            + 7
-            * U235_atom
-            * (
-                np.exp(lambda_235 * relevant_tT[i, 0])
-                - np.exp(lambda_235 * relevant_tT[i + 1, 0])
-            ) 
-            + 6
-            * Th_atom
-            * (
-                np.exp(lambda_232 * relevant_tT[i, 0])
-                - np.exp(lambda_232 * relevant_tT[i + 1, 0])
-            ) 
-            for i in range(np.size(relevant_tT, 0) - 2, -1, -1)
-        ]
+        # compute the exponential arrays for all time steps at once
+        time = relevant_tT[:, 0]                        
+        exp_238 = np.exp(lambda_238 * time)    
+        exp_235 = np.exp(lambda_235 * time)    
+        exp_232 = np.exp(lambda_232 * time)    
 
-        # multiple each row of the rho_r_array by alpha_i
-        alpha_e_array = (
-            rho_r_array[: np.size(relevant_tT, 0) - 1, : np.size(relevant_tT, 0) - 1] * alpha_i
+        # calculate dose in alpha/g at each time step
+        alpha_i = (
+            8 * U238_atom * (exp_238[:-1] - exp_238[1:])
+            + 7 * U235_atom * (exp_235[:-1] - exp_235[1:])
+            + 6 * Th_atom * (exp_232[:-1] - exp_232[1:]) 
         )
 
+        # reverse it so it's in the correct order as tT
+        alpha_i = alpha_i[::-1]
+
+        # multiple each row of the rho_r_array by alpha_i
+        n = np.size(relevant_tT, 0)
+        alpha_e_array = rho_r_array[:n - 1, :n - 1] * alpha_i
+        
         # sum the columns of alpha_e_array to get the total damage at each time step
         damage = np.sum(alpha_e_array, axis=1)
 
@@ -808,8 +800,10 @@ class zircon(crystal):
         exp_fa_tort = np.exp(-Ba * damage)
         exp_fa_prime = np.exp(-Ba * damage * interconnect)
 
-        #tau array
-        tau = (lint_0 / (4.2 / ((1 - exp_fa_tort) * SV) - 2.5))**2
+        # tau array
+        # prevent divide by zero when damage is zero or very small
+        # the 1.0 is dummy value, which will be masked out by final np.where
+        tau = np.where( damage >= 1e14, (lint_0 / (4.2 / ((1 - exp_fa_tort) * SV) - 2.5))**2, 1.0)
 
         # Arrhenius equations for D_l and D_N17 arrays
         D_l = D0_l * np.exp(-Ea_l / (gas_constant * mean_temp))
@@ -1268,8 +1262,8 @@ class apatite(crystal):
         Returns
         -------
         
-        damage: list of floats
-            List of total amount of damage at each time step of relevant_tT
+        damage: 1D array of floats
+            Total amount of damage at each time step of relevant_tT
         
         """
         # constants for the e_rho_s calculation, as defined in Flowers et al. (2009)
@@ -1285,43 +1279,31 @@ class apatite(crystal):
         relevant_tT = self._relevant_tT
         rho_r_array = self._rho_r_array
 
-        # rho v calculation, atoms/cc
-        rho_v = [
-            U238_vol
-            * (
-                np.exp(lambda_238 * relevant_tT[i, 0])
-                - np.exp(lambda_238 * relevant_tT[i + 1, 0])
-            ) 
-            + (7 / 8)
-            * U235_vol
-            * (
-                np.exp(lambda_235 * relevant_tT[i, 0])
-                - np.exp(lambda_235 * relevant_tT[i + 1, 0])
-            ) 
-            + (6 / 8)
-            * Th_vol
-            * (
-                np.exp(lambda_232 * relevant_tT[i, 0])
-                - np.exp(lambda_232 * relevant_tT[i + 1, 0])
-            ) 
-            + (1 / 8)
-            * Sm_vol
-            * (
-                np.exp(lambda_147 * relevant_tT[i, 0])
-                -np.exp(lambda_147 * relevant_tT[i + 1, 0])
-            ) 
-            for i in range(np.size(relevant_tT, 0) - 2, -1, -1)
-        ]
+        # compute the exponential arrays for all time steps at once
+        time = relevant_tT[:, 0]                        
+        exp_238 = np.exp(lambda_238 * time)    
+        exp_235 = np.exp(lambda_235 * time)    
+        exp_232 = np.exp(lambda_232 * time)
+        exp_147 = np.exp(lambda_147 * time) 
+
+        # rho v array, atoms/cc, shape (n-1,)
+        rho_v = (
+            U238_vol * (exp_238[:-1] - exp_238[1:]) 
+            + (7/8) * U235_vol * (exp_235[:-1] - exp_235[1:]) 
+            + (6/8) * Th_vol * (exp_232[:-1] - exp_232[1:]) 
+            + (1/8) * Sm_vol * (exp_147[:-1] - exp_147[1:]) 
+        )
+
+        # reverse it so it's in the correct order as tT
+        rho_v = rho_v[::-1]
         
         # sum the columns of each row of rho_r_array
         rho_r = np.sum(rho_r_array, axis=1)
         
-        # e_rho_s calculation
-        damage = [
-            eta_q * L * (lambda_f / lambda_238) * rho_v[i] * rho_r[i] 
-            for i in range(np.size(relevant_tT, 0) - 1)
-        ]
-        
+        # e_rho_s calculation, shape (n-1,)
+        n = np.size(relevant_tT, 0)
+        damage = eta_q * L * (lambda_f / lambda_238) * rho_v * rho_r[:n-1]
+
         return damage
     
     def flowers_diffs(self, damage):
