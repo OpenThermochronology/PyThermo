@@ -858,8 +858,6 @@ class tT_model:
                     # determine diffusivities for diffused grain
                     if diff_model == 'guenthner':
                         bulk_diffs = model_grain.guenthner_diffs(dose)
-                        if j == 1:
-                            print(bulk_diffs, temp, time)
                     elif diff_model == 'mp_diffusion':
                         bulk_diffs = model_grain.mp_diffs(dose)[2]
                     elif diff_model == 'flowers':

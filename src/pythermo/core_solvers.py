@@ -249,8 +249,8 @@ def _CN_diffusion_core(
         Returns
         -------
 
-        He_profile: array of floats
-            The 1D radial profile of diffused He (units of atoms/g).
+        He_profile: 1D array of floats
+            The 1D concentration profile from grain center to rim of diffused He (units of atoms/g).
 
         """
         # set up arrays for tridiagonal matrix
@@ -322,7 +322,7 @@ def _CN_diffusion_core(
                 # solve it using Thomas algorithm helper function, u becomes u_n+1 and repeat
                 u = _tridiag_lu(a, diagonal, c, d, nodes)
 
-        # convert u to the He concentration profile
+        # convert u to the to the He amount profile (in atoms)
         He_profile = u / r_positions
         return He_profile
 
@@ -347,13 +347,19 @@ def _CN_diffusion_core_banded(
         routine for solving the tridiagonal system, which provides better numerical precision 
         for cases where beta is large. Falls back from _CN_diffusion_core when beta exceeds
         a threshold value. See _CN_diffusion_core for full parameter documentation.
+
         """
+        # set up arrays for tridiagonal matrix
+        # u is the coordinate transform vector
+        # u = vr, v is the He profile, r is radius
 
         u = init_He.copy()
 
+        # setup diagonal and d (RHS vector, Ax = d)
         diagonal = np.zeros(nodes)
         d = np.zeros(nodes)
 
+        # a is sub-, and c is supra-diagonal
         a = np.ones(nodes)
         a[-1] = 0.0
         c = np.ones(nodes)
@@ -361,8 +367,10 @@ def _CN_diffusion_core_banded(
 
         r_positions = (np.arange(nodes) + 0.5) * r_step
 
+        # step through time from old to young
         for i in range(tT_path.shape[0] - 1):
-
+            
+            # subdivide the time step if necessary
             dt_int = tT_path[i, 0] - tT_path[i + 1, 0]
             fourier = (diffs[i] * dt_int) / r_step**2
             if fourier > 0.5 and divide:
@@ -391,14 +399,18 @@ def _CN_diffusion_core_banded(
                 * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
                 )
 
+                # production array
                 production = all_alphas * r_positions * beta * allow
 
+                # Neumann inner boundary condition (u[0]_i = -u[1]_i, where "0" is imaginary, "1" represents first real index at diagonal[0])
                 diagonal[0] = -3.0 - beta
                 d[0] = (3.0 - beta) * u[0] - u[1] - production[0]
 
+                # Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
                 diagonal[-1] = -2.0 - beta
                 d[-1] = (2.0 - beta) * u[-1] - u[-2] - production[-1]
 
+                # fill in the rest
                 diagonal[1:-1] = -2.0 - beta
                 d[1:-1] = (2.0 - beta) * u[1:-1] - u[2:] - u[:-2] - production[1:-1]
                 
@@ -409,6 +421,7 @@ def _CN_diffusion_core_banded(
                 ab[2, :-1] = a[:-1]
                 u = solve_banded((1, 1), ab, d.copy())
 
+        # convert u to the He amount profile (in atoms)
         He_profile = u / r_positions
         return He_profile
 
@@ -568,13 +581,13 @@ def _mp_diffusion_core(
         -------
 
         bulk_He_profile: 1D array of floats
-            The 1D radial profile of diffused He in the bulk grain
+            The 1D concentraiton profile of diffused He in the bulk grain (units of atoms/g)
         
         fast_He_profile: 1D array of floats
-            The 1D radial profile of diffused He in the fast pathways
+            The 1D concentration profile of diffused He in the fast pathways (units of atoms/g)
 
         lat_He_profile: 1D array of floats
-            The 1D radial profile of diffused He in the lattice
+            The 1D concentration profile of diffused He in the lattice (units of atoms/g)
 
         converged: boolean
             Informs higher level callers if the while loop converged because tolerance was reached ('True') or maximum number of iterations was reached ('False')

@@ -282,7 +282,7 @@ class crystal:
         -------
 
         He_profile: array of floats
-            The 1D radial profile of diffused He (units of atoms/g).
+            The 1D concentration profile of diffused He (units of atoms/g).
 
         """
         # damping parameters
@@ -369,13 +369,13 @@ class crystal:
         -------
 
         bulk_He_profile: 1D array of floats
-            The 1D radial profile of diffused He in the bulk grain
+            The 1D concentration profile of diffused He in the bulk grain (units of atoms/g)
         
         fast_He_profile: 1D array of floats
-            The 1D radial profile of diffused He in the fast pathways
+            The 1D concentration profile of diffused He in the fast pathways (units of atoms/g)
 
         lat_He_profile: 1D array of floats
-            The 1D radial profile of diffused He in the lattice
+            The 1D concentration profile of diffused He in the lattice (units of atoms/g)
 
         """
         # unpack diff_parameters, D values have to be in units of micrometer**2/s
@@ -572,6 +572,86 @@ class crystal:
         
         return corrected_date
 
+    def CN_profile(
+            self, 
+            diffs,  
+            init_He, 
+            eject=True, 
+            produce=True,
+            divide=False
+            ):
+        """
+        Returns the 1D, spherical diffusion profiles for the bulk grain using the Crank-Nicolson diffusion function.
+
+        Parameters
+        ----------
+
+        diffs: 1D array of floats
+            Diffusivities for each time step. Diffusivities must have units of microns^2/s. Must be length of the relevant time-temperature (or step-heating) path.
+
+        init_He: 1D array
+            1D profile of alphas (in atoms/g) for lattice, must be length of nodes.
+        
+        eject: optional boolean
+            Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
+        
+        produce: optional boolean
+            Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True', meaning production will occur.
+        
+        divide: optional boolean
+            Allows for the time-temperature history to be sub-divided for better precision on the concentration profile. Useful for laboratory heating schedules with small fractional losses. Default is 'False'.
+
+
+        
+        Returns
+        ----------
+        bulk_He_profile: list of floats
+            The 1D radial profile of diffused He in the bulk grain
+
+        total_bulk_He: float
+            The total amount of bulk helium present in atoms per spherical volume (base of 1/(4/3 * Pi)) 
+
+        """
+
+        # convert 1D profiles to radial position profiles
+        # reflects 1st node position as 0.5 * r_step from grain center
+
+        if init_He is not None:
+            init_He = init_He * self._r_vals
+
+        if eject:
+            bulk_He_profile = self.CN_diffusion(
+                self._nodes, 
+                self._r_step, 
+                self._relevant_tT, 
+                diffs,
+                self._aej_U238, 
+                self._aej_U235, 
+                self._aej_Th, 
+                self._aej_Sm, 
+                init_He,
+                produce,
+                divide
+            )
+        else:
+            bulk_He_profile = self.CN_diffusion(
+                self._nodes, 
+                self._r_step, 
+                self._relevant_tT, 
+                diffs,
+                self._no_aej_U238, 
+                self._no_aej_U235, 
+                self._no_aej_Th, 
+                self._no_aej_Sm, 
+                init_He,
+                produce,
+                divide
+            )
+
+        bulk_He_profile, total_bulk_He = self._integrate_profile(bulk_He_profile)
+
+        return bulk_He_profile, total_bulk_He
+    
     def _integrate_profile(self, bulk_He_profile):
         """
         Private helper function that checks for zero helium concentration, then uses Romberg integration to calculate total helium in the bulk grain.
@@ -590,6 +670,7 @@ class crystal:
         
         total_bulk_He: float
             Total helium in atoms per spherical volume (base of 1/(4/3 * Pi))
+            
         """
         if np.min(bulk_He_profile) < -bulk_He_profile[0] * 0.5:
             return np.zeros_like(bulk_He_profile), 0.0
@@ -712,9 +793,14 @@ class zircon(crystal):
             'none',
         )
         
-    def guenthner_damage(self):
+    def guenthner_damage(self, initial_damage=0.0):
         """
         Calculates the amount of radiation damage at each time step of class variable relevant_tT using the parameterization of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01). The damage amounts can then be directly used to calculate diffusivities at each time step.
+
+        Parameters
+        ----------
+        initial_damage : optional float
+            Pre-existing radiation damage at the start of the tT path, in units of alpha/g. Default is 0.0 (no pre-existing damage).
         
         Returns
         -------
@@ -742,14 +828,17 @@ class zircon(crystal):
             + 6 * Th_atom * (exp_232[:-1] - exp_232[1:]) 
         )
 
-        # reverse it so it's in the correct order as tT
+        # reverse it so it's in the correct order as tT (old -> young)
         alpha_i = alpha_i[::-1]
+
+        # add any initial damage to the first index in alpha_i
+        alpha_i[0] += initial_damage
 
         # multiple each row of the rho_r_array by alpha_i
         n = np.size(relevant_tT, 0)
         alpha_e_array = rho_r_array[:n - 1, :n - 1] * alpha_i
         
-        # sum the columns of alpha_e_array to get the total damage at each time step
+        # sum the columns of each row of alpha_e_array to get the total damage at each time step
         damage = np.sum(alpha_e_array, axis=1)
 
         return damage
@@ -822,7 +911,7 @@ class zircon(crystal):
     
         return diff_array
             
-    def zirc_date(self, diff_model, dam_model, init_He = None):
+    def zirc_date(self, diff_model, dam_model, init_He = None, init_damage = 0.0, eject=True, produce=True, divide=False):
         """
         Zircon (U-Th)/He date calculator. First calculates the diffusivity at each time step of class variable relevant_tT using various parameterizations. Current available diffusion models include Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01), and Guenthner et al. (XXXX). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally, the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
 
@@ -836,7 +925,19 @@ class zircon(crystal):
             Damage annealing model, current choices are 'guenthner' for the parameterization of Guenthner et al. (2013) (https://doi.org/10.2475/03.2013.01)
 
         init_He: optional 1D array of floats
-            1D profile of atoms for lattice, must be length of nodes. Default is None. Must be in terms of radial position. 
+            User defined initial profile of helium concentration (atoms) in 1D from grain center to rim. It should be noted that lower-level diffusion solvers require units of concentration per radial position (i.e. in u, where u = concentration * radial position), but the conversion is done internally with the expectation that users will more commonly have initial profiles in terms of simply concentration. Default is 'None'.
+
+        init_damage: optional float
+            Pre-existing radiation damage at the start of the tT path, in units of alpha/g. Default is 0.0 (no pre-existing damage)
+        
+        eject: optional boolean
+            Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
+            
+        produce: optional boolean
+            Allows for no alpha production during diffusion. Default is 'True', meaning production will occur.
+        
+        divide: optional boolean
+            Allows for the time-temperature history to be sub-divided for better precision on the concentration profile. Useful for laboratory heating schedules with small fractional losses. Default is 'False'.
         
         Returns
         -------
@@ -856,7 +957,7 @@ class zircon(crystal):
         """
         # calculate damage levels using guenthner_damage function
         if dam_model == 'guenthner':
-            damage = self.guenthner_damage()
+            damage = self.guenthner_damage(init_damage)
         
         # get diff_array from guenthner_diffs method
         if diff_model == 'guenthner':
@@ -864,24 +965,18 @@ class zircon(crystal):
         elif diff_model == 'mp_diffusion':
             diff_array = self.mp_diffs(damage)[2]
             
-        # send it all to the CN_diffusion method
-        He_profile = self.CN_diffusion(
-            self._nodes,
-            self._r_step,
-            self._relevant_tT,
+        # send it all to the CN_profile method
+        He_profile, total_He = self.CN_profile(
             diff_array,
-            self._aej_U238,
-            self._aej_U235,
-            self._aej_Th,
-            self._aej_Sm,
             init_He,
+            eject,
+            produce,
+            divide
         )
 
         # calculate date
         
-        He_profile, total_He = self._integrate_profile(He_profile)
         final_damage = damage[-1]
-        
         if total_He == 0:
             return 0.0, final_damage, He_profile, 0.0        
 
@@ -1063,84 +1158,6 @@ class zircon(crystal):
 
         return bulk_He_profile, fast_He_profile, lat_He_profile, total_bulk_He
 
-    def CN_profile(
-                self, 
-                diffs,  
-                init_He, 
-                eject=True, 
-                produce=True,
-                divide=False
-                ):
-            """
-            Returns the 1D, spherical diffusion profiles for the bulk grain using the Crank-Nicolson diffusion function.
-
-            Parameters
-            ----------
-
-            diffs: 1D array of floats
-                Diffusivities for each time step. Diffusivities must have units of microns^2/s. Must be length of the relevant time-temperature (or step-heating) path.
-
-            init_He: 1D array
-                1D profile of alphas (in atoms/g) for lattice, must be length of nodes.
-            
-            eject: optional boolean
-                Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
-            
-            produce: optional boolean
-                Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True', meaning production will occur.
-            
-            divide: optional boolean
-                Allows for the time-temperature history to be sub-divided for better precision on the concentration profile. Useful for laboratory heating schedules with small fractional losses. Default is 'False'.
-
-
-            
-            Returns
-            ----------
-            bulk_He_profile: list of floats
-                The 1D radial profile of diffused He in the bulk grain
-
-            total_bulk_He: float
-                The total amount of bulk helium present in atoms per spherical volume (base of 1/(4/3 * Pi)) 
-    
-            """
-
-            # convert 1D profiles to radial position profiles
-            # reflects 1st node position as 0.5 * r_step from grain center
-
-            init_He = init_He * self._r_vals
-
-            if eject:
-                bulk_He_profile = self.CN_diffusion(
-                    self._nodes, 
-                    self._r_step, 
-                    self._relevant_tT, 
-                    diffs,
-                    self._aej_U238, 
-                    self._aej_U235, 
-                    self._aej_Th, 
-                    self._aej_Sm, 
-                    init_He,
-                    produce,
-                    divide
-                )
-            else:
-                bulk_He_profile = self.CN_diffusion(
-                    self._nodes, 
-                    self._r_step, 
-                    self._relevant_tT, 
-                    diffs,
-                    self._no_aej_U238, 
-                    self._no_aej_U235, 
-                    self._no_aej_Th, 
-                    self._no_aej_Sm, 
-                    init_He,
-                    produce,
-                    divide
-                )
-
-            bulk_He_profile, total_bulk_He = self._integrate_profile(bulk_He_profile)
-
-            return bulk_He_profile, total_bulk_He
 
 class apatite(crystal):
     def __init__(
@@ -1255,9 +1272,14 @@ class apatite(crystal):
             'none',
         )
         
-    def flowers_damage(self):
+    def flowers_damage(self, initial_damage=0.0):
         """
         Calculates the amount of radiation damage at each time step of class variable relevant_tT using the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015). The damage amounts can then be directly used to calculate diffusivities at each time step.
+
+        Parameters
+        ----------
+        initial_damage : optional float
+            Pre-existing radiation damage at the start of the tT path, in units of atoms/cc. Default is 0.0 (no pre-existing damage).
 
         Returns
         -------
@@ -1294,8 +1316,11 @@ class apatite(crystal):
             + (1/8) * Sm_vol * (exp_147[:-1] - exp_147[1:]) 
         )
 
-        # reverse it so it's in the correct order as tT
+        # reverse it so it's in the correct order as tT (old -> young)
         rho_v = rho_v[::-1]
+
+        # add any initial damage to the first index in rho_v
+        rho_v[0] += initial_damage
         
         # sum the columns of each row of rho_r_array
         rho_r = np.sum(rho_r_array, axis=1)
@@ -1346,7 +1371,7 @@ class apatite(crystal):
 
         return diff_array
     
-    def ap_date(self, diff_model, dam_model, init_He = None):
+    def ap_date(self, diff_model, dam_model, init_He = None, init_damage = 0.0, eject=True, produce=True, divide=False):
         """
         Apatite (U-Th)/He date calculator. First calculates the diffusivity at each time step of class variable relevant_tT using various parameterizations. Current available diffusion models include Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015). The diffusivities are then passed to the parent class method CN_diffusion, along with relevant parameters. Finally,the parent class method He_date is called to convert the He profile to a (U-Th)/He date.
 
@@ -1360,8 +1385,21 @@ class apatite(crystal):
             Damage annealing model, current choices are 'flowers' for the parameterization of Flowers et al. (2009) (https://doi.org/10.1016/j.gca.2009.01.015).
 
         init_He: optional 1D array of floats
-            1D profile of atoms for lattice, must be length of nodes. Default is None. Must be in terms of radial position. 
+            User defined initial profile of helium concentration (atoms) in 1D from grain center to rim. It should be noted that lower-level diffusion solvers require units of concentration per radial position (i.e. in u, where u = concentration * radial position), but the conversion is done internally with the expectation that users will more commonly have initial profiles in terms of simply concentration. Default is 'None'.
         
+        init_damage: optional float
+            Pre-existing radiation damage at the start of the tT path, in units of atoms/cc. Default is 0.0 (no pre-existing damage)
+        
+        eject: optional boolean
+            Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
+            
+        produce: optional boolean
+            Allows for no alpha production during diffusion. Default is 'True', meaning production will occur.
+        
+        divide: optional boolean
+            Allows for the time-temperature history to be sub-divided for better precision on the concentration profile. Useful for laboratory heating schedules with small fractional losses. Default is 'False'.
+
+           
 
         Returns
         -------
@@ -1381,109 +1419,26 @@ class apatite(crystal):
         """
         # calculate damage levels using flowers_damage function
         if dam_model == 'flowers':
-            damage = self.flowers_damage()
+            damage = self.flowers_damage(init_damage)
 
         # calculate diffusivities using flowers_diffs function
         if diff_model == 'flowers':
             diff_list = self.flowers_diffs(damage)
 
-        # send it all to the CN_diffusion method
-        He_profile = self.CN_diffusion(
-            self._nodes,
-            self._r_step,
-            self._relevant_tT,
+        # send it all to the CN_profile method
+        He_profile, total_He = self.CN_profile(
             diff_list,
-            self._aej_U238,
-            self._aej_U235,
-            self._aej_Th,
-            self._aej_Sm,
             init_He,
+            eject,
+            produce,
+            divide,
         )
 
         # calculate date
         
-        He_profile, total_He = self._integrate_profile(He_profile)
         final_damage = damage[-1]
-        
         if total_He == 0:
             return 0.0, final_damage, He_profile, 0.0        
 
         date = self.He_date(total_He, self._corr_factors)
         return date, final_damage, He_profile, total_He
-
-    def CN_profile(
-                self, 
-                diffs,  
-                init_He, 
-                eject=True, 
-                produce=True,
-                divide=False,
-                ):
-            """
-            Returns the 1D, spherical diffusion profiles for the bulk grain using the Crank-Nicolson diffusion function.
-
-            Parameters
-            ----------
-
-            diffs: 1D array of floats
-                Diffusivities for each time step. Diffusivities must have units of microns^2/s. Must be length of the relevant time-temperature (or step-heating) path.
-
-            init_He: 1D array
-                1D profile of alphas (in atoms/g) for lattice, must be length of nodes.
-            
-            eject: optional boolean
-                Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
-            
-            produce: optional boolean
-                Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True', meaning production will occur.
-            
-            divide: optional boolean
-                Allows for the time-temperature history to be sub-divided for better precision on the concentration profile. Useful for laboratory heating schedules with small fractional losses. Default is 'False'.
-
-            
-            Returns
-            ----------
-            bulk_He_profile: list of floats
-                The 1D radial profile of diffused He in the bulk grain
-
-            total_bulk_He: float
-                The total amount of bulk helium present in atoms per spherical volume (base of 1/(4/3 * Pi)) 
-    
-            """
-
-            # convert 1D profiles to radial position profiles
-            # reflects 1st node position as 0.5 * r_step from grain center
-            init_He = init_He * self._r_vals
-
-            if eject:
-                bulk_He_profile = self.CN_diffusion(
-                    self._nodes, 
-                    self._r_step, 
-                    self._relevant_tT, 
-                    diffs,
-                    self._aej_U238, 
-                    self._aej_U235, 
-                    self._aej_Th, 
-                    self._aej_Sm, 
-                    init_He,
-                    produce,
-                    divide
-                )
-            else:
-                bulk_He_profile = self.CN_diffusion(
-                    self._nodes, 
-                    self._r_step, 
-                    self._relevant_tT, 
-                    diffs,
-                    self._no_aej_U238, 
-                    self._no_aej_U235, 
-                    self._no_aej_Th, 
-                    self._no_aej_Sm, 
-                    init_He,
-                    produce,
-                    divide
-                )
-
-            bulk_He_profile, total_bulk_He = self._integrate_profile(bulk_He_profile)
-
-            return bulk_He_profile, total_bulk_He
