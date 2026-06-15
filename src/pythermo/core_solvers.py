@@ -15,6 +15,34 @@ from numba import jit
 from scipy.linalg import solve_banded
 
 @jit(nopython=True)
+def _solve_beta(fourier_calc, M, tol=1e-12, max_iter=100):
+    """
+    Helper function that deflats the Britz et al. (2003) (https://www.doi.org.10.1016/S0097-8485(02)00075-X) eq. 24. The (beta - 1) factor (trivial root) is divided out to prevent falling on the wrong side of the trivial root in the guess. This leads to the function: G(beta) = sum_{k=0}^{M-1} beta**k - fourier_calc*(beta + 1). Now G is strictly convex with a single root > 1. Starting from a rigorous upper bound, Newton descends monotonically and never reaches beta = 1. This prevents issues when fourier_calc is very large (>>1e6) and the trivial root sits inside the basin of a very near 1 start.
+
+    """
+
+    beta = (2.0 * fourier_calc) ** (1.0 / (M - 2))
+    for _i in range(max_iter):
+        s = 0.0
+        ds = 0.0
+        
+        # evaluate G and G' using Horner's method: s -> p(beta), ds -> p'(beta)
+        for _k in range(M):
+            ds = ds * beta + s
+            s = s * beta + 1.0
+
+        g = s - fourier_calc * (beta + 1.0)
+        gp = ds - fourier_calc
+        step = g / gp
+        beta -= step
+
+        if abs(step) < tol * beta:
+            break
+        
+    return beta
+
+
+@jit(nopython=True)
 def _divide_tT(D, dt, temp, r_step, M, initial_damp):
         """
         Helper function for dividing up tT paths when Fourier number is large. Follows the approach of Britz et al. (2003) (https://www.doi.org.10.1016/S0097-8485(02)00075-X).
@@ -60,21 +88,9 @@ def _divide_tT(D, dt, temp, r_step, M, initial_damp):
             return sub_tT
 
         # set up iterative Newton-Raphson solver for eq 24 from Britz et al. (2003)
+        # deflated to drop the trivial beta = 1 root
         fourier_calc = D * dt / r_step**2
-        beta_guess = 1.2
-        f_beta = fourier_calc * (beta_guess**2 - 1) - (beta_guess**M - 1)
-        f_beta_prime = 2*fourier_calc*beta_guess - M*beta_guess**(M-1)
-        tolerance = 1e-3
-
-        beta_diff = beta_guess
-
-        # iterate to solve
-        while abs(beta_diff) > tolerance:
-            beta = beta_guess - f_beta / f_beta_prime
-            beta_diff = beta_guess - beta
-            beta_guess = beta
-            f_beta = fourier_calc * (beta_guess**2 - 1) - (beta_guess**M - 1)
-            f_beta_prime = 2 * fourier_calc * beta_guess - M * beta_guess**(M - 1)
+        beta = _solve_beta(fourier_calc, M)
 
         # add on the initial damping steps
         expansion_steps = initial_damp + M
@@ -456,9 +472,6 @@ def _CN_diffusion_core_wrapper(
         All other parameters are the same as _CN_diffusion_core.
         """
 
-        # estimate maximum beta across all time steps
-        dt_min = np.min(np.abs(np.diff(tT_path[:, 0])))
-        #beta_max = (2.0 * r_step**2) / (np.min(diffs) * dt_min)
         beta_max =1e6
         if beta_max > beta_threshold:
             return _CN_diffusion_core_banded(
@@ -493,7 +506,7 @@ def _CN_diffusion_core_wrapper(
                 initial_damp
             )
 
-@jit(nopython=True)
+
 def _mp_diffusion_core( 
             nodes, 
             r_step, 
@@ -685,10 +698,14 @@ def _mp_diffusion_core(
                 partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[1:-1]
                 
                 d[1:-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[1:-1] - u_fp_n[2:] - u_fp_n[:-2] - production + partition + partition_n_plus
-                
-                # solve for fast path concentration using thomas solve helper function
-                u_fp = _tridiag_lu(a, diagonal, c, d, nodes)
-                
+            
+                # solve with solve_banded
+                ab = np.zeros((3, nodes))
+                ab[0, 1:] = c[1:]
+                ab[1, :] = diagonal
+                ab[2, :-1] = a[:-1]
+                u_fp = solve_banded((1, 1), ab, d.copy())
+
                 # iterate within each time segment for distribution between fast path and lattice
                 diff_max = 1.0
                 counter = 0
@@ -696,8 +713,8 @@ def _mp_diffusion_core(
                 while diff_max > tolerance and counter < max_iter:
 
                     # for comparison with updated values in diff_max
-                    u_fp_old = u_fp
-                    u_lat_old = u_lat
+                    u_fp_old = u_fp.copy()
+                    u_lat_old = u_lat.copy()
                                      
                     # generate RHS vector for lattice concentration from fast path solution
                     # Neumann inner BC
@@ -723,8 +740,12 @@ def _mp_diffusion_core(
                     partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[1:-1]
                     d[1:-1] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[1:-1] - u_lat_n[2:] - u_lat_n[:-2] - production - partition - partition_n_plus
                         
-                    # solve for lattice concentration using thomas solve helper function
-                    u_lat = _tridiag_lu(a, diagonal, c, d, nodes)
+                    # solve with solve_banded
+                    ab = np.zeros((3, nodes))
+                    ab[0, 1:] = c[1:]
+                    ab[1, :] = diagonal
+                    ab[2, :-1] = a[:-1]
+                    u_lat = solve_banded((1, 1), ab, d.copy())
                     
                     # generate RHS vector again for fast path concentration from lattice solution
                     # Neumann inner BC
@@ -751,8 +772,12 @@ def _mp_diffusion_core(
 
                     d[1:-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[1:-1] - u_fp_n[2:] - u_fp_n[:-2] - production + partition + partition_n_plus
 
-                    # solve for fast path concentration once more using thomas solve helper function
-                    u_fp = _tridiag_lu(a, diagonal, c, d, nodes)
+                    # solve with solve_banded
+                    ab = np.zeros((3, nodes))
+                    ab[0, 1:] = c[1:]
+                    ab[1, :] = diagonal
+                    ab[2, :-1] = a[:-1]
+                    u_fp = solve_banded((1, 1), ab, d.copy())
                     
                     # determine diff_max to compare for next iteration of while loop
                     xi_max = np.max(np.abs(u_fp - u_fp_old))
