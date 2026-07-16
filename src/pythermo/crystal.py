@@ -889,6 +889,9 @@ class zircon(crystal):
         exp_fa_tort = np.exp(-Ba * damage)
         exp_fa_prime = np.exp(-Ba * damage * interconnect)
 
+        # safety check for fully amorphous regime where exp_fa_prime underflows to zero
+        safe_exp_fa_prime = np.where(exp_fa_prime > 0, exp_fa_prime, np.finfo(float).tiny)
+
         # tau array
         # prevent divide by zero when damage is zero or very small
         # the 1.0 is dummy value, which will be masked out by final np.where
@@ -899,8 +902,8 @@ class zircon(crystal):
         D_N17 = D0_N17 * np.exp(-Ea_N17 / (gas_constant * mean_temp))
 
         # calculate diffusivities at each time step using equation 8 in Guenthner et al. (2013), units are in micrometers2/s
-        fc_prime_term = (1 - (1 - exp_fa_prime)) / ((1/tau) * (D_l / (radius * (1 - (1 - exp_fa_prime)))**2))
-        fa_prime_term = (1 - exp_fa_prime) / (D_N17 / (radius * (1 - exp_fa_prime))**2)
+        fc_prime_term = safe_exp_fa_prime / ((1/tau) * (D_l / (radius * safe_exp_fa_prime)**2))
+        fa_prime_term = (1 - safe_exp_fa_prime) / (D_N17 / (radius * (1 - safe_exp_fa_prime))**2)
         diff_damaged = radius**2 / (fa_prime_term + fc_prime_term)
 
         # minimal diffusivity allowed equivalent to zircons with 1e14 alphas/g, prevents divide by zero in diffusivity calculation
@@ -1014,31 +1017,30 @@ class zircon(crystal):
         # Palenik et al. 2003
         B_a = 5.48e-19
 
-        # mean intercept length of zircon with dose of 1e14 alphas/g (nm)
-        l_int_0 = 45920
-
         # surface area to volume ratio of damage capsule (cm-1)
         SV = 1.669
 
-        # Guenthner et al. (XXXX) diffusion equation parameters, Eas are in kJ/mol, D0s converted to microns2/s
-        D0_z = 1130 * 10**8 
-        D0_sc = 0.0186 * 10**8
-        Ea_z = 165.68
-        Ea_sc = 70.74
-        Ea_trap = 17.1
-        gamma = 0.873
-        kappa_1 = 0.101
-        k_star = 9.33e-10
-        n_sc = 7.038
-        n_t = 0.37
+        # Guenthner et al. (2026) diffusion equation parameters
+
+        D0_z = 867.0 * 10**8        # micron^2/s
+        D0_sc = 0.00702 * 10**8     # micron^2/s
+        Ea_z = 168.72               # kJ/mol
+        Ea_sc = 70.74               # kJ/mol
+        Ea_trap = 27.1              # kJ/mol
+        l_int_0 = 4510.0            # nm
+        gamma = 0.00146
+        kappa_1 = 1e-3
+        k_star = 1.385e-11
+        n_sc = 72.76
+        n_t = 0.7398
 
         # mean temperature (in K) across each step of tT
         mean_temp = (relevant_tT[:-1, 1] + relevant_tT[1:, 1]) / 2
 
         # tort parameter arrays
-        f_a_DI = 1 - np.exp(-B_a * damage)**n_t
+        f_a_DI = 1 - np.exp(-B_a * damage)
         l_int = (4.2 / (f_a_DI * SV)) - 2.5
-        tau = (l_int_0 / l_int)**2
+        tau = (1 + (l_int_0 / l_int))**n_t
         D0_v = D0_z * (1 / tau)
 
         # trap parameter array
@@ -1054,7 +1056,7 @@ class zircon(crystal):
         f = 1 - ((1 + B_a * damage) * np.exp(-(B_a * damage)))**n_sc
 
         # protect against values of f = 1, which blows up kappa_2
-        f = np.clip(f, 0, 1 - 1e-10)
+        f = np.clip(f, 0, 1 - 1e-15)
 
         # solve for kappa_2
         kappa_2 = -kappa_1 * (k_star * f) / (1 - f)
@@ -1064,7 +1066,6 @@ class zircon(crystal):
             (1 / (kappa_1 - kappa_2)) * 
             (-kappa_2 * fast_diff_array + kappa_1 * lat_diff_array)
         )
-
         
         return fast_diff_array, lat_diff_array, bulk_diff_array
 
