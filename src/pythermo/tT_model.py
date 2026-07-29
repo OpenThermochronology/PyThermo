@@ -837,13 +837,11 @@ class tT_model:
                     if grain_diffs is not None:
                         fast_diffs = np.array([grain_diffs[j, 0]])
                         lat_diffs = np.array([grain_diffs[j, 1]])
-                        bulk_diffs = np.array([grain_diffs[j, 2]])
                     else:
-                        fast_diffs, lat_diffs, bulk_diffs = model_grain.mp_diffs(dose)
-
+                        fast_diffs, lat_diffs, _ = model_grain.mp_diffs(dose)
                     diff_params['D_sc'] = fast_diffs
                     diff_params['D_v'] = lat_diffs
-
+                    
                     # perform multi-path diffusion and get the various diffusion profiles
                     bulk_He, fast_He, lat_He, total_bulk_He = model_grain.mp_profile(
                         diff_params, 
@@ -859,7 +857,10 @@ class tT_model:
                     if diff_model == 'guenthner':
                         bulk_diffs = model_grain.guenthner_diffs(dose)
                     elif diff_model == 'mp_diffusion':
-                        bulk_diffs = model_grain.mp_diffs(dose)[2]
+                        if grain_diffs is not None:
+                            bulk_diffs = np.array([grain_diffs[j, 2]])
+                        else:
+                            bulk_diffs = model_grain.mp_diffs(dose)[2]
                     elif diff_model == 'flowers':
                         bulk_diffs = model_grain.flowers_diffs(e_rho_s)
                     else:

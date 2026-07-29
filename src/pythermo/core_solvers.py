@@ -17,11 +17,27 @@ from scipy.linalg import solve_banded
 @jit(nopython=True)
 def _solve_beta(fourier_calc, M, tol=1e-12, max_iter=100):
     """
-    Helper function that deflats the Britz et al. (2003) (https://www.doi.org.10.1016/S0097-8485(02)00075-X) eq. 24. The (beta - 1) factor (trivial root) is divided out to prevent falling on the wrong side of the trivial root in the guess. This leads to the function: G(beta) = sum_{k=0}^{M-1} beta**k - fourier_calc*(beta + 1). Now G is strictly convex with a single root > 1. Starting from a rigorous upper bound, Newton descends monotonically and never reaches beta = 1. This prevents issues when fourier_calc is very large (>>1e6) and the trivial root sits inside the basin of a very near 1 start.
+    Helper function that solves eq. 24 of Britz et al. (2003) (https://www.doi.org.10.1016/S0097-8485(02)00075-X) using a Newton-Raphson approach. The (beta - 1) factor (trivial root) of eq. 24 is divided out to prevent falling on the wrong side of the trivial root in the guess. Now the function is strictly convex with a single root > 1. This prevents issues when fourier_calc is very large (>>1e6) and the trivial root sits inside the basin of a very near 1 start.
+
+    Parameters
+    ----------
+    
+    fourier_calc: float
+        Fourier number (Dt/a2)
+
+    M: int
+        Number of sub-divisions for the exponentially increasing damping function.
+
+    tol: float
+        The tolerance value of precision on the solver. Default is 1e-12.
+    
+    max_iter: int
+        The maximum number of iterations permitted in the solver. Safety valve to prevent non-convergence of solution. Default is 100.
 
     """
 
     beta = (2.0 * fourier_calc) ** (1.0 / (M - 2))
+
     for _i in range(max_iter):
         s = 0.0
         ds = 0.0
