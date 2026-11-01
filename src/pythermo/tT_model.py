@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as mplcm
 import matplotlib.colors as colors
 from cycler import cycler
-from scipy.integrate import romb
 from .constants import (
     np, 
     lambda_238, 
@@ -86,7 +85,7 @@ class tT_model:
             The user-defined 1 sigma standard deviation in grain size for grain size comparison runs. Can be used if obs_data is 'None'. Default is 0.
         
         log2_nodes: optional int
-            The number of nodes (2**log2_nodes + 1) used in the Crank-Nicolson diffusion solver. Default is 8 (256 nodes + 1).
+            The number of nodes (2**log2_nodes) used in the Crank-Nicolson diffusion solver. Default is 8 (256 nodes).
         
         colormap : str or matplotlib Colormap, optional
             Colormap used for model visualization. The default is a set of 8 colors 
@@ -98,6 +97,9 @@ class tT_model:
         -------
         forward_fig: figure object
             Figure object containing tT paths and correspondind date-eU plots.
+        
+        model_data: 3 column array
+            A 3 column array (date in first column, eU in second, grain size in third) that contains model dates for each t-T path used in forward modeling.
 
         """
         tT_in = self._tT_in
@@ -406,7 +408,7 @@ class tT_model:
         self.set_model_data(model_data)
         forward_fig = self.date_eU_plot(model_data, num_grains, comp_type, colormap=colormap)
 
-        return forward_fig
+        return forward_fig, model_data
 
     def date_eU_plot(self, model_data, grain_num, comp_type, colormap='default'):
         """ 
@@ -645,10 +647,10 @@ class tT_model:
             User defined initial profile of helium concentration in 1D from grain center to rim. It should be noted that lower-level diffusion solvers require units of concentration per radial position (i.e. in u, where u = concentration * radial position), but the conversion is done in the profiler methods with the expectation that users will more commonly have initial profiles in terms of simply concentration. Default is 'None'.
 
         grain_diffs: optional 3 column array
-            A 3 column array that contains user-defined fast-path diffusivities (1st column), lattice diffusivities (2nd column), and bulk diffusivities (3rd column). Number of rows must match the number of heating step and diffusivities must be matched to temperature. Default is None, which allows the function to assign predetermined diffusivities in the case of multi-path diffusion.
+            A 3 column array that contains user-defined fast-path diffusivities (1st column), lattice diffusivities (2nd column), and bulk diffusivities (3rd column). Number of rows must match the number of heating step and diffusivities must be matched to temperature. Diffusivities must be in units of micrometers**2/second. Default is None, which allows the function to assign predetermined diffusivities in the case of multi-path diffusion.
         
         log2_nodes: optional int
-            The number of nodes (2**log2_nodes + 1) used in the finite difference scheme. Default is 13 (8192 nodes + 1).
+            The number of nodes (2**log2_nodes) used in the finite difference scheme. Default is 13 (8192 nodes).
 
         divide: option boolean
             Allows for subdivision of the tT path. Default is 'True', meaning the tT path will be subdivided if the Fourier number is larger than 0.5 for a given step.
@@ -671,9 +673,9 @@ class tT_model:
         eta_q = 0.91
         L = 0.000815
 
-        # constants for dose f_a calculation for multi-path model, as defined by Guenthner et al. (2013)
+        # constants for dose f_a calculation for multi-path model, as defined by Guenthner et al. (2027)
         B_a = 5.48e-19 
-        n = 10
+        n_sc = 2.351
 
         frac_loss_data = []
         profile_data = []
@@ -735,7 +737,7 @@ class tT_model:
             e_rho_s = eta_q * L * (lambda_f / lambda_238) * rho_v
 
             # determine fraction amorphous, needed to distribute He atoms in multi-path model
-            f_a = 1 - ((1 + B_a * dose) * np.exp(-(B_a * dose)))**n
+            f_a = 1 - ((1 + B_a * dose) * np.exp(-(B_a * dose)))**n_sc
             diff_params['f'] = f_a              
 
             if grain_type == 'apatite':

@@ -34,6 +34,12 @@ def _solve_beta(fourier_calc, M, tol=1e-12, max_iter=100):
     max_iter: int
         The maximum number of iterations permitted in the solver. Safety valve to prevent non-convergence of solution. Default is 100.
 
+    Returns
+    -------
+
+    beta: float
+        Factor by which to divide out a time temperature history to reduce oscilliations.
+
     """
 
     beta = (2.0 * fourier_calc) ** (1.0 / (M - 2))
@@ -56,7 +62,6 @@ def _solve_beta(fourier_calc, M, tol=1e-12, max_iter=100):
             break
         
     return beta
-
 
 @jit(nopython=True)
 def _divide_tT(D, dt, temp, r_step, M, initial_damp):
@@ -343,9 +348,9 @@ def _CN_diffusion_core(
                 diagonal[0] = -3.0 - beta
                 d[0] = (3.0 - beta) * u[0] - u[1] - production[0]
 
-                # Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
-                diagonal[-1] = -2.0 - beta
-                d[-1] = (2.0 - beta) * u[-1] - u[-2] - production[-1]
+                # Dirichlet outer BC, u[nodes+1] = -u[nodes] where "nodes+1" is imaginary, so u = 0 at the grain edge (r = nodes * r_step)
+                diagonal[-1] = -3.0 - beta
+                d[-1] = (3.0 - beta) * u[-1] - u[-2] - production[-1]
 
                 # fill in the rest
                 diagonal[1:-1] = -2.0 - beta                   
@@ -438,9 +443,9 @@ def _CN_diffusion_core_banded(
                 diagonal[0] = -3.0 - beta
                 d[0] = (3.0 - beta) * u[0] - u[1] - production[0]
 
-                # Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
-                diagonal[-1] = -2.0 - beta
-                d[-1] = (2.0 - beta) * u[-1] - u[-2] - production[-1]
+                # Dirichlet outer BC, u[nodes+1] = -u[nodes] where "nodes+1" is imaginary, so u = 0 at the grain edge (r = nodes * r_step)
+                diagonal[-1] = -3.0 - beta
+                d[-1] = (3.0 - beta) * u[-1] - u[-2] - production[-1]
 
                 # fill in the rest
                 diagonal[1:-1] = -2.0 - beta
@@ -488,7 +493,9 @@ def _CN_diffusion_core_wrapper(
         All other parameters are the same as _CN_diffusion_core.
         """
 
-        beta_max =1e6
+        # largest beta occurs on undivided steps (sub-divided steps have Fourier >= 0.5, so beta <= ~4)
+        dts = tT_path[:-1, 0] - tT_path[1:, 0]
+        beta_max = np.max(2.0 * r_step**2 / (diffs * dts))
         if beta_max > beta_threshold:
             return _CN_diffusion_core_banded(
                 nodes, 
@@ -522,7 +529,6 @@ def _CN_diffusion_core_wrapper(
                 initial_damp
             )
 
-
 def _mp_diffusion_core( 
             nodes, 
             r_step, 
@@ -544,7 +550,7 @@ def _mp_diffusion_core(
             initial_damp,
             ):
         """ 
-        Core function for solving diffusion in a crystal with multiple diffusion pathways, a fast path and a volume path, using a Crank-Nicoloson scheme. Uses jit decorator. Based on the set-up of Lee and Aldama (1992) (https://doi.org/10.1016/0098-3004(92)90093-7) and their algorithm for solving equations 18a and 18b. Adapted by Guenthner et al. (in prep) (doi pending) for a tridiagonal setup, production terms, and Neumann and Dirichlet-type boundary conditions.
+        Core function for solving diffusion in a crystal with multiple diffusion pathways, a fast path and a volume path, using a Crank-Nicoloson scheme. Based on the set-up of Lee and Aldama (1992) (https://doi.org/10.1016/0098-3004(92)90093-7) and their algorithm for solving equations 18a and 18b. Adapted by Guenthner et al. (in prep) (doi pending) for a tridiagonal setup, production terms, and Neumann and Dirichlet-type boundary conditions.
 
         Parameters
         ----------
@@ -696,14 +702,14 @@ def _mp_diffusion_core(
                 diagonal[0] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
                 d[0] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[0] - u_fp_n[1] - production + partition + partition_n_plus
                 
-                # Dirichlet outer boundary condition, u[nodes+1]_i = u[nodes+1]_i+1, where "nodes+1" is imaginary
+                # Dirichlet outer BC, u[nodes+1] = -u[nodes] where "nodes+1" is imaginary, so u = 0 at the grain edge (r = nodes * r_step)
                 # production term for last node
                 production = all_alphas[-1] * f * (nodes - 0.5) * r_step * beta_sc * allow
                 partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
                 partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
  
-                diagonal[-1]= -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition + partition_n_plus
+                diagonal[-1]= -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                d[-1] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition + partition_n_plus
                 
                 # fill in the rest
                 diagonal[1:-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
@@ -746,8 +752,8 @@ def _mp_diffusion_core(
                     partition = beta_v * 0.5 * dt * kappa_1 * u_fp_n[-1]
                     partition_n_plus = beta_v * 0.5 * dt * kappa_1 * u_fp[-1]
 
-                    diagonal[-1] = -2.0 - beta_v + beta_v * 0.5 * dt * kappa_2
-                    d[-1] = (2.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[-1] - u_lat_n[-2] - production - partition - partition_n_plus
+                    diagonal[-1] = -3.0 - beta_v + beta_v * 0.5 * dt * kappa_2
+                    d[-1] = (3.0 - beta_v - beta_v * 0.5 * dt * kappa_2) * u_lat_n[-1] - u_lat_n[-2] - production - partition - partition_n_plus
                     
                     # fill in the rest
                     diagonal[1:nodes-1] = -2.0 - beta_v + beta_v * 0.5 * dt * kappa_2
@@ -777,8 +783,8 @@ def _mp_diffusion_core(
                     partition = beta_sc * 0.5 * dt * kappa_2 * u_lat_n[-1]
                     partition_n_plus = beta_sc * 0.5 * dt * kappa_2 * u_lat[-1]
 
-                    diagonal[-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
-                    d[-1] = (2.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition + partition_n_plus
+                    diagonal[-1] = -3.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1
+                    d[-1] = (3.0 - beta_sc + beta_sc * 0.5 * dt * kappa_1) * u_fp_n[-1] - u_fp_n[-2] - production + partition + partition_n_plus
 
                     # fill in the rest
                     diagonal[1:nodes-1] = -2.0 - beta_sc - beta_sc * 0.5 * dt * kappa_1

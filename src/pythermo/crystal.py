@@ -23,7 +23,6 @@ from .constants import (
     ap_density,
 )
 from .core_solvers import _CN_diffusion_core_wrapper, _mp_diffusion_core
-from scipy.integrate import romb
 import warnings
 
 class crystal:
@@ -654,7 +653,7 @@ class crystal:
     
     def _integrate_profile(self, bulk_He_profile):
         """
-        Private helper function that checks for zero helium concentration, then uses Romberg integration to calculate total helium in the bulk grain.
+        Private helper function that checks for zero helium concentration, then sums over spherical shells to calculate total helium.
 
         Parameters
         ----------
@@ -675,8 +674,9 @@ class crystal:
         if np.min(bulk_He_profile) < -bulk_He_profile[0] * 0.5:
             return np.zeros_like(bulk_He_profile), 0.0
 
-        integral = bulk_He_profile * 4 * np.pi * self._r_vals**2
-        total_bulk_He = romb(integral, self._r_step) / ((4/3) * np.pi)
+        # sum over spherical shells, cell edges at k * r_step, grain edge at nodes * r_step
+        edges = np.arange(self._nodes + 1) * self._r_step
+        total_bulk_He = np.sum(bulk_He_profile * np.diff(edges**3))
 
         return bulk_He_profile, total_bulk_He
 
@@ -694,7 +694,7 @@ class zircon(crystal):
             Radius of a sphere with equivalent surfacea area to volume ratio as grain (in micrometers)
 
         log2_nodes: int
-            Number of nodes for 1D finite difference diffusion solver is equivalent to 2^log2_nodes + 1 (necessary for Romberg integration)
+            Number of nodes for 1D finite difference diffusion solver is equivalent to 2^log2_nodes
         
         relevant_tT: 2D array of floats
             Discretized time-temperature path
@@ -715,9 +715,9 @@ class zircon(crystal):
         super().__init__()
         self._radius = radius
         self._log2_nodes = log2_nodes
-        self._nodes = 2**log2_nodes + 1
-        # grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
-        self._r_step = radius / (self._nodes + 0.5)
+        self._nodes = 2**log2_nodes
+        # grid spacing in micrometers, nodes are cell centres at (k + 0.5) * r_step, so the grain edge is at nodes * r_step
+        self._r_step = radius / self._nodes
         self._r_vals = (np.arange(self._nodes) + 0.5) * self._r_step
         self._U_ppm = U_ppm
         self._Th_ppm = Th_ppm
@@ -988,7 +988,7 @@ class zircon(crystal):
     
     def mp_diffs(self, damage):
         """
-        Calculates the diffusivity at each time step of class variable relevant_tT using the multi-path parameterization of Guenthner et al. (XXXX)
+        Calculates the diffusivity at each time step of class variable relevant_tT using the multi-path parameterization of Guenthner et al. (2026).
 
         Parameters
         ----------
@@ -1022,37 +1022,54 @@ class zircon(crystal):
 
         # Guenthner et al. (2026) diffusion equation parameters
 
-        D0_z = 867.0 * 10**8        # micron^2/s
-        D0_sc = 0.00702 * 10**8     # micron^2/s
-        Ea_z = 168.72               # kJ/mol
-        Ea_sc = 70.74               # kJ/mol
-        Ea_trap = 27.1              # kJ/mol
-        l_int_0 = 4510.0            # nm
-        gamma = 0.00146
-        kappa_1 = 1e-3
-        k_star = 1.385e-11
-        n_sc = 72.76
-        n_t = 0.7398
+        D0_sc = 0.006367    # cm2/s
+        Ea_sc = 70.74       # kJ/mol 
+        D0_z = 0.1326       # cm2/s
+        Ea_z = 119.024       # kJ/mol
+        Ea_trap = 63.761    # kJ/mol
+        gamma = 0.002395
+        m = 6.56
+        k_star = 0.005236
+        kappa_1 = 0.001
+        l_int_0 = 11.14
+        n_t = 4.493
+        n_psi = 0.74
+        n_phi = 0.8884
+        n_omega = 9.53
+        n_xi = 8.0094
+        n_sc = 2.351  
+
+        # convert D0s to microns2/s
+        D0_sc = D0_sc * 10**8
+        D0_z = D0_z * 10**8
 
         # mean temperature (in K) across each step of tT
         mean_temp = (relevant_tT[:-1, 1] + relevant_tT[1:, 1]) / 2
+        
+        # end member diffusion constants
+        D_z = D0_z * np.exp(-Ea_z / (gas_constant * mean_temp))
+        D_fp = D0_sc * np.exp(-Ea_sc / (gas_constant * mean_temp))
+
+        # fraction amorphous and fraction crstyalline from direct impact
+        f_a_DI = (1 - np.exp(-B_a * damage))
+        f_c_DI = np.exp(-B_a * damage)
 
         # tort parameter arrays
-        f_a_DI = 1 - np.exp(-B_a * damage)
         l_int = (4.2 / (f_a_DI * SV)) - 2.5
         tau = (1 + (l_int_0 / l_int))**n_t
-        D0_v = D0_z * (1 / tau)
 
         # trap parameter array
-        psi = (gamma * f_a_DI * np.exp(Ea_trap/(gas_constant * mean_temp))) + 1
+        d_trap = np.exp(Ea_trap / (gas_constant * mean_temp))
+        psi =  (1 + gamma * (f_a_DI**n_psi + f_a_DI**n_phi * d_trap))
+        omega = (1 + m * (f_c_DI**n_omega + f_c_DI**n_xi * d_trap))
 
         # lattice (volume) diffusivity array
-        lat_diff_array = D0_v * np.exp(-Ea_z / (gas_constant * mean_temp)) / psi
+        lat_diff_array = D_z / (psi * tau)
 
         # fast path diffusivity array
-        fast_diff_array = D0_sc * np.exp(-Ea_sc / (gas_constant * mean_temp))
+        fast_diff_array = D_fp / omega
 
-        # fraction amorphous
+        # fraction amorphous from single overlap
         f = 1 - ((1 + B_a * damage) * np.exp(-(B_a * damage)))**n_sc
 
         # protect against values of f = 1, which blows up kappa_2
@@ -1159,7 +1176,6 @@ class zircon(crystal):
 
         return bulk_He_profile, fast_He_profile, lat_He_profile, total_bulk_He
 
-
 class apatite(crystal):
     def __init__(
             self, radius, log2_nodes, relevant_tT, rho_r_array, U_ppm, Th_ppm, Sm_ppm=0
@@ -1174,7 +1190,7 @@ class apatite(crystal):
             Radius of a sphere with equivalent surfacea area to volume ratio as grain (in micrometers)
 
         log2_nodes: int
-            Number of nodes for 1D finite difference diffusion solver is equivalent to 2^log2_nodes + 1
+            Number of nodes for 1D finite difference diffusion solver is equivalent to 2^log2_nodes
         
         relevant_tT: 2D array of floats
             Discretized time-temperature path
@@ -1195,9 +1211,9 @@ class apatite(crystal):
         super().__init__()
         self._radius = radius
         self._log2_nodes = log2_nodes
-        self._nodes = 2**log2_nodes + 1
-        # grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
-        self._r_step = radius / (self._nodes + 0.5)
+        self._nodes = 2**log2_nodes
+        # grid spacing in micrometers, nodes are cell centres at (k + 0.5) * r_step, so the grain edge is at nodes * r_step
+        self._r_step = radius / self._nodes
         self._r_vals = (np.arange(self._nodes) + 0.5) * self._r_step
         self._U_ppm = U_ppm
         self._Th_ppm = Th_ppm

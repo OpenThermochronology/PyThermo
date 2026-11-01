@@ -223,7 +223,7 @@ def test_profile_array_columns():
     assert pr[0].shape[1] == 3
 
 def test_profile_rows_match_nodes():
-    nodes = 2**8 + 1
+    nodes = 2**8
     model = make_model()
     _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6, log2_nodes=8)
     assert pr[0].shape[0] == nodes
@@ -261,7 +261,7 @@ def test_zircon_runs_without_error():
 def test_custom_init_profile_used():
     # supplying init_profile should bypass the internal He calculator
     model = make_model()
-    nodes = 2**8 + 1
+    nodes = 2**8
     custom = np.ones(nodes) * 1e10
     fl_default, _ = model.step_degas(make_diff_params(), 'CN', 1e-6, log2_nodes=8)
     fl_custom, _ = model.step_degas(make_diff_params(), 'CN', 1e-6, init_profile=custom, log2_nodes=8)
@@ -464,14 +464,14 @@ def test_repeated_identical_steps_monotonic():
 def test_default_node_count():
     model = make_model()
     _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6)
-    assert pr[0].shape[0] == 2**13 + 1
+    assert pr[0].shape[0] == 2**13
 
 def test_smaller_node_count():
     model = make_model()
     _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6, log2_nodes=8)
-    assert pr[0].shape[0] == 2**8 + 1
+    assert pr[0].shape[0] == 2**8
 
 def test_larger_node_count():
     model = make_model()
     _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6, log2_nodes=14)
-    assert pr[0].shape[0] == 2**14 + 1
+    assert pr[0].shape[0] == 2**14

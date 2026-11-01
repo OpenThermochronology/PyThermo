@@ -146,9 +146,9 @@ def test_ap_CN_diffusion(ap):
     assert len(diff_list) == np.size(ap.get_relevant_tT(), 0) - 1
 
     aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = ap.apatite_alpha_ejection()
-    r_step = 60 / (257.5)
+    r_step = 60 / (256)
     He_profile = ap.CN_diffusion(
-        257,
+        256,
         r_step,
         ap.get_relevant_tT(),
         diff_list,
@@ -171,9 +171,9 @@ def test_zirc_CN_diffusion(zirc):
     assert len(diff_list) == np.size(zirc.get_relevant_tT(), 0) - 1
 
     aej_U238, aej_U235, aej_Th, aej_Sm, corr_factors = zirc.zircon_alpha_ejection()
-    r_step = 60 / (257.5)
+    r_step = 60 / (256)
     He_profile = zirc.CN_diffusion(
-        257,
+        256,
         r_step,
         zirc.get_relevant_tT(),
         diff_list,
@@ -341,17 +341,17 @@ def test_integrate_profile_negative(zirc):
 def test_zirc_getters(zirc):
     assert zirc.get_radius() == 60
     assert zirc.get_log2_nodes() == 8
-    assert zirc.get_nodes() == 2**8 + 1
+    assert zirc.get_nodes() == 2**8
     assert zirc.get_U_ppm() == 1000
     assert zirc.get_Th_ppm() == 500
     assert zirc.get_Sm_ppm() == 0
-    assert zirc.get_r_step() == pytest.approx(60 / (257.5))
+    assert zirc.get_r_step() == pytest.approx(60 / 256)
 
 def test_ap_getters(ap):
     assert ap.get_radius() == 60
     assert ap.get_log2_nodes() == 8
-    assert ap.get_nodes() == 2**8 + 1
+    assert ap.get_nodes() == 2**8
     assert ap.get_U_ppm() == 100
     assert ap.get_Th_ppm() == 50
     assert ap.get_Sm_ppm() == 10
-    assert ap.get_r_step() == pytest.approx(60 / (257.5))
+    assert ap.get_r_step() == pytest.approx(60 / 256)
