@@ -422,86 +422,6 @@ class crystal:
 
         return bulk_He_profile, fast_He_profile, lat_He_profile
     
-    def divide_tT(self, D, dt, temp, r_step, M, initial_damp):
-        """
-        Helper function for dividing up tT paths when Fourier number is large. Follows the approach of Britz et al. (2003) (https://www.doi.org.10.1016/S0097-8485(02)00075-X).
-
-        Parameters
-        ----------
-        
-        D: float
-            Diffusivity at a given time-step. In microns^2/s.
-
-        dt: float
-            Length of time-step to be subdivided. In seconds.
-
-        temp: float
-            Temperature for the time-step. In Kelvin.
-
-        r_step: float
-            Node spacing. In microns.
-
-        M: int
-            Number of sub-divisions for the exponentially increasing damping function.
-
-        initial_damp: int
-            Number of sub-divions for the initial damping.
-
-
-        Returns
-        -------
-
-        sub_tT: 2D array
-            An array of time-temperature points.
-        
-        """
-        fourier_set = 0.5
-        dt_int = fourier_set * r_step**2 / D
-
-        # ensure damping steps don't produce negative times when dt_int is large, short-circuit if dt_int is large
-        if dt_int > initial_damp + M:
-            n_steps = int(dt / dt_int) + 1
-            sub_tT = np.zeros((n_steps, 2))
-            sub_tT[:, 0] = dt - np.arange(n_steps) * dt_int
-            sub_tT[:, 1] = temp
-            return sub_tT
-
-        # set up iterative Newton-Raphson solver for eq 24 from Britz et al. (2003)
-        fourier_calc = D * dt / r_step**2
-        beta_guess = 1.2
-        f_beta = fourier_calc * (beta_guess**2 - 1) - (beta_guess**M - 1)
-        f_beta_prime = 2*fourier_calc*beta_guess - M*beta_guess**(M-1)
-        tolerance = 1e-3
-
-        beta_diff = beta_guess
-
-        # iterate to solve
-        while abs(beta_diff) > tolerance:
-            beta = beta_guess - f_beta / f_beta_prime
-            beta_diff = beta_guess - beta
-            beta_guess = beta
-            f_beta = fourier_calc * (beta_guess**2 - 1) - (beta_guess**M - 1)
-            f_beta_prime = 2 * fourier_calc * beta_guess - M * beta_guess**(M - 1)
-
-        # add on the initial damping steps
-        expansion_steps = initial_damp + M
-        
-        sub_tT = np.zeros((expansion_steps,2))
-        sub_tT[0,0] = dt
-        i_vals = np.arange(1, initial_damp)
-        sub_tT[1:initial_damp, 0] = dt -  dt_int * (1 + i_vals)
-        tau_1 = sub_tT[initial_damp - 1, 0] * (beta - 1) / (beta**M - 1)
-
-        delta_t = 0
-        i_vals = np.arange(M - 1)
-        delta_t = np.cumsum(beta**i_vals) * tau_1
-        sub_tT[initial_damp:initial_damp + M - 1,0] = sub_tT[initial_damp - 1, 0] - delta_t
-
-        # add on temperatures
-        sub_tT[:,1] = temp
-                
-        return sub_tT
-
     def He_date(self, total_He, corr_factors):
         """ 
         Calculate corrected date using a Newton-Raphson method. Precision is set to 1000 years.
@@ -674,7 +594,7 @@ class crystal:
         if np.min(bulk_He_profile) < -bulk_He_profile[0] * 0.5:
             return np.zeros_like(bulk_He_profile), 0.0
 
-        # sum over spherical shells, cell edges at k * r_step, grain edge at nodes * r_step
+        # sum over spherical shells, each node is a center of a cell with edges at k * r_step, the grain edge is at nodes * r_step
         edges = np.arange(self._nodes + 1) * self._r_step
         total_bulk_He = np.sum(bulk_He_profile * np.diff(edges**3))
 
@@ -716,7 +636,7 @@ class zircon(crystal):
         self._radius = radius
         self._log2_nodes = log2_nodes
         self._nodes = 2**log2_nodes
-        # grid spacing in micrometers, nodes are cell centres at (k + 0.5) * r_step, so the grain edge is at nodes * r_step
+        # grid spacing in micrometers, nodes are centers of cells with each node at position (k + 0.5) * r_step. The last cell's (k-1) edge is also the grain edge, which is at nodes * r_step
         self._r_step = radius / self._nodes
         self._r_vals = (np.arange(self._nodes) + 0.5) * self._r_step
         self._U_ppm = U_ppm
@@ -1212,7 +1132,7 @@ class apatite(crystal):
         self._radius = radius
         self._log2_nodes = log2_nodes
         self._nodes = 2**log2_nodes
-        # grid spacing in micrometers, nodes are cell centres at (k + 0.5) * r_step, so the grain edge is at nodes * r_step
+        # grid spacing in micrometers, nodes are centers of cells with each node at position (k + 0.5) * r_step. The last cell's (k-1) edge is also the grain edge, which is at nodes * r_step
         self._r_step = radius / self._nodes
         self._r_vals = (np.arange(self._nodes) + 0.5) * self._r_step
         self._U_ppm = U_ppm

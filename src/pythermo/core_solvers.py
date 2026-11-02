@@ -100,35 +100,33 @@ def _divide_tT(D, dt, temp, r_step, M, initial_damp):
         fourier_set = 0.5
         dt_int = fourier_set * r_step**2 / D
 
-        # ensure damping steps don't produce negative times when dt_int is large, short-circuit if dt_int is large
-        if dt_int > initial_damp + M:
-            n_steps = int(dt / dt_int) + 1
-            sub_tT = np.zeros((n_steps, 2))
-            sub_tT[:, 0] = dt - np.arange(n_steps) * dt_int
+        # if dt is too short for the damping and expansion schedule, use uniform sub-steps at Fourier <= 0.5 that end exactly at 0
+        if dt <= (initial_damp + M) * dt_int:
+            n_steps = int(np.ceil(dt / dt_int))
+            sub_tT = np.zeros((n_steps + 1, 2))
+            sub_tT[:, 0] = dt * (1.0 - np.arange(n_steps + 1) / n_steps)
             sub_tT[:, 1] = temp
             return sub_tT
 
-        # set up iterative Newton-Raphson solver for eq 24 from Britz et al. (2003)
+        # set up for iterative Newton-Raphson solver for eq 24 from Britz et al. (2003)
         # deflated to drop the trivial beta = 1 root
-        fourier_calc = D * dt / r_step**2
-        beta = _solve_beta(fourier_calc, M)
+        # initial_damp sub-steps at Fourier 0.5, then M geometrically expanding sub-steps over the remaining time
+        remaining = dt - initial_damp * dt_int
+        beta = _solve_beta(D * remaining / r_step**2, M)
+        if beta - 1.0 < 1e-10:
+            tau_1 = remaining / M
+        else:
+            tau_1 = remaining * (beta - 1.0) / (beta**M - 1.0)
 
-        # add on the initial damping steps
-        expansion_steps = initial_damp + M
+        sub_tT = np.zeros((initial_damp + M + 1, 2))
+        sub_tT[:initial_damp + 1, 0] = dt - np.arange(initial_damp + 1) * dt_int
+        sub_tT[initial_damp + 1:, 0] = remaining - np.cumsum(beta**np.arange(M)) * tau_1
+
+        # set last time step to 0
+        sub_tT[-1, 0] = 0.0 
         
-        sub_tT = np.zeros((expansion_steps,2))
-        sub_tT[0,0] = dt
-        i_vals = np.arange(1, initial_damp)
-        sub_tT[1:initial_damp, 0] = dt -  dt_int * (1 + i_vals)
-        tau_1 = sub_tT[initial_damp - 1, 0] * (beta - 1) / (beta**M - 1)
-
-        delta_t = 0
-        i_vals = np.arange(M - 1)
-        delta_t = np.cumsum(beta**i_vals) * tau_1
-        sub_tT[initial_damp:initial_damp + M - 1,0] = sub_tT[initial_damp - 1, 0] - delta_t
-
         # add on temperatures
-        sub_tT[:,1] = temp
+        sub_tT[:, 1] = temp
                 
         return sub_tT
 
