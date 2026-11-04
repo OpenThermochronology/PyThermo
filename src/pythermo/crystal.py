@@ -30,7 +30,7 @@ class crystal:
         pass
 
     def alpha_ejection(
-            self, radius, nodes, r_step, U_ppm, Th_ppm, Sm_ppm, mineral_type
+            self, radius, edges, U_ppm, Th_ppm, Sm_ppm, mineral_type
         ):
         """ 
         Determines the 1D alpha ejection He profile from the center of the grain to the edge assuming a spherical geometry. Currently, the method assumes a uniform distribution of parent isotopes, as well as averaged, unchained ejection radii for these parent isotopes.
@@ -41,11 +41,8 @@ class crystal:
         radius: float
             Radius of a sphere with equivalent surfacea area to volume ratio as grain (in micrometers)
 
-        nodes: int
-            Number of nodes for 1D finite difference diffusion solver
-
-        r_step: float
-            Grid spacing in micrometers, reflects 1st node position as 0.5 * r_step from grain center
+        edges: 1D array of floats
+            Radial positions of the cell edges in micrometers, from 0 at the grain center to radius at the grain edge. Nodes are at the cell centers, so there is one fewer node than edges.
         
         U_ppm: float
             Concentration of uranium in zircon (in ppm)
@@ -96,7 +93,8 @@ class crystal:
 
         # alpha ejection profile arrays for each isotope
         # compute radial positions
-        r_pos = (np.arange(nodes) + 0.5) * r_step
+        nodes = edges.size - 1
+        r_pos = 0.5 * (edges[1:] + edges[:-1])
 
         # create masks for each isotope to ensure no divide by zero or very near zero
         mask_U238 = r_pos >= (radius - as_U238)
@@ -173,9 +171,7 @@ class crystal:
             aej_Sm = np.where(mask_Sm, ejected_Sm, Sm_atom)
                 
         # calculate alpha ejection correction factors for age equation
-        outer = (np.arange(1, nodes + 1) * r_step)**3
-        inner = (np.arange(nodes) * r_step)**3
-        vol = outer - inner
+        vol = np.diff(edges**3)
 
         # weighted sums
         nft_U238 = np.sum(vol * aej_U238)
@@ -594,11 +590,53 @@ class crystal:
         if np.min(bulk_He_profile) < -bulk_He_profile[0] * 0.5:
             return np.zeros_like(bulk_He_profile), 0.0
 
-        # sum over spherical shells, each node is a center of a cell with edges at k * r_step, the grain edge is at nodes * r_step
-        edges = np.arange(self._nodes + 1) * self._r_step
-        total_bulk_He = np.sum(bulk_He_profile * np.diff(edges**3))
+        # sum over spherical shells, each node is a center of a cell and the outer edge of the last cell is the grain edge
+        total_bulk_He = np.sum(bulk_He_profile * self._vols)
 
         return bulk_He_profile, total_bulk_He
+
+    def _graded_edges(self, r_min, growth, r_max):
+        """
+        Private helper function that builds rim-graded edges for the finite volume diffusion solver. Cells widths start at a minimum value (r_min) at the edge of the grain and grow towards the center of the grain by a user-defined factor up to a maximum (r_max).
+
+        Parameters
+        ----------
+        
+        r_min: float
+            Width of the outermost cell (at the edge of the grain) in micrometers
+
+        growth: float
+            The growth factor of cell widths (i.e. ratio of widths of neighboring cells) as you go from the edge of the grain to the center. Must be at least 1.0. Values closer to 1 improve the error between the analytical solution and the numerical solution at the grain edge, at the cost of increased number of cells and therefore slower run times. between 1.02 and 1.05 are recommended.
+        
+        r_max: float
+            The maximum cell width in micrometers
+
+        Returns
+        -------
+
+        edges: 1D array of floats
+            Radial positions (in micrometers) of the cell edges, from 0 at the grain center to the grain edge.
+        """
+
+        # error check
+        if r_min <= 0.0 or growth < 1.0:
+                raise ValueError('r_min must be positive and growth must be at least 1.0')
+
+        # build cell widths from grain edge inward
+        widths = []
+        total = 0.0
+        width = r_min
+        while total < self._radius:
+            widths.append(width)
+            total = width + total
+            width = min(width * growth, r_max)
+
+        # now order widths from center to edge, rescale to the grain radius, and make sure the last cell ends exactly at the grain edge
+        widths = np.array(width[::-1] * self._radius / total)
+        edges = np.concatenate((np.zeros(1), np.cumsum(widths)))
+        edges[-1] = self._radius
+
+        return edges
 
 class zircon(crystal):
     def __init__(
@@ -638,7 +676,10 @@ class zircon(crystal):
         self._nodes = 2**log2_nodes
         # grid spacing in micrometers, nodes are centers of cells with each node at position (k + 0.5) * r_step. The last cell's (k-1) edge is also the grain edge, which is at nodes * r_step
         self._r_step = radius / self._nodes
-        self._r_vals = (np.arange(self._nodes) + 0.5) * self._r_step
+        # cell edges, node positions (cell centers), and shell volumes (base of 1/(4/3 * Pi))
+        self._edges = np.arange(self._nodes + 1) * self._r_step
+        self._r_vals = 0.5 * (self._edges[1:] + self._edges[:-1])
+        self._vols = np.diff(self._edges**3)
         self._U_ppm = U_ppm
         self._Th_ppm = Th_ppm
         self._Sm_ppm = Sm_ppm
@@ -694,8 +735,7 @@ class zircon(crystal):
     def zircon_alpha_ejection(self):
         return self.alpha_ejection(
             self._radius,
-            self._nodes,
-            self._r_step,
+            self._edges,
             self._U_ppm,
             self._Th_ppm,
             self._Sm_ppm,
@@ -705,8 +745,7 @@ class zircon(crystal):
     def zircon_no_ejection(self):
         return self.alpha_ejection(
             self._radius,
-            self._nodes,
-            self._r_step,
+            self._edges,
             self._U_ppm,
             self._Th_ppm,
             self._Sm_ppm,
@@ -1134,7 +1173,10 @@ class apatite(crystal):
         self._nodes = 2**log2_nodes
         # grid spacing in micrometers, nodes are centers of cells with each node at position (k + 0.5) * r_step. The last cell's (k-1) edge is also the grain edge, which is at nodes * r_step
         self._r_step = radius / self._nodes
-        self._r_vals = (np.arange(self._nodes) + 0.5) * self._r_step
+        # cell edges, node positions (cell centers), and shell volumes (base of 1/(4/3 * Pi))
+        self._edges = np.arange(self._nodes + 1) * self._r_step
+        self._r_vals = 0.5 * (self._edges[1:] + self._edges[:-1])
+        self._vols = np.diff(self._edges**3)
         self._U_ppm = U_ppm
         self._Th_ppm = Th_ppm
         self._Sm_ppm = Sm_ppm
@@ -1190,8 +1232,7 @@ class apatite(crystal):
     def apatite_alpha_ejection(self):
         return self.alpha_ejection(
             self._radius,
-            self._nodes,
-            self._r_step,
+            self._edges,
             self._U_ppm,
             self._Th_ppm,
             self._Sm_ppm,
@@ -1201,8 +1242,7 @@ class apatite(crystal):
     def apatite_no_ejection(self):
         return self.alpha_ejection(
             self._radius,
-            self._nodes,
-            self._r_step,
+            self._edges,
             self._U_ppm,
             self._Th_ppm,
             self._Sm_ppm,

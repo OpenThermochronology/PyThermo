@@ -316,6 +316,8 @@ def _CN_diffusion_core(
             if fourier > 0.5 and divide:
                 temp = (tT_path[i, 1] + tT_path[i + 1, 1]) / 2
                 sub_tT_path = _divide_tT(diffs[i], dt_int, temp, r_step, M, initial_damp)
+                # shift the sub-step times back to real ages for calculating production
+                sub_tT_path[:, 0] += tT_path[i + 1, 0]
             else:
                 sub_tT_path = tT_path[i:i + 2, :]
            
@@ -411,6 +413,8 @@ def _CN_diffusion_core_banded(
             if fourier > 0.5 and divide:
                 temp = (tT_path[i, 1] + tT_path[i + 1, 1]) / 2
                 sub_tT_path = _divide_tT(diffs[i], dt_int, temp, r_step, M, initial_damp)
+                # shift the sub-step times back to real ages for calculating production
+                sub_tT_path[:, 0] += tT_path[i + 1, 0]
             else:
                 sub_tT_path = tT_path[i:i + 2, :]
                 
@@ -569,10 +573,10 @@ def _mp_diffusion_core(
             Volume diffusivities. Must be units of micrometer2/s and length of np.size(tT_path,0) - 1.
 
         kappa_1: float
-            Exchange coefficient from 
+            Exchange coefficient from the fast path to the lattice (1/s) 
         
         kappa_2: float
-            Exchange coefficient from
+            Exchange coefficient from the lattice to the fast path (1/s), negative
         
         f: float
             Fraction of amorphousness
@@ -600,9 +604,6 @@ def _mp_diffusion_core(
         
         allow: float
             Allows for alpha production (equals 1.0) or no alpha production (equals 0.0) during diffusion, useful for generating Arrhenius trends.
-
-        divide: boolean
-            Allows for the time-temperature history to be sub-divided for better precision on the concentration profile. Useful for laboratory heating schedules with small fractional losses.
 
         M: int
             Number of sub-divisions for the exponentially increasing damping function.
@@ -661,6 +662,8 @@ def _mp_diffusion_core(
             if fourier_sc > 0.5:
                 temp = (tT_path[i, 1] + tT_path[i + 1, 1]) / 2
                 sub_tT_path = _divide_tT(D_sc[i], dt_int, temp, r_step, M, initial_damp)
+                # shift the sub-step times back to real ages for calculating production
+                sub_tT_path[:, 0] += tT_path[i + 1, 0]
             else:
                 sub_tT_path = tT_path[i:i + 2, :]
 
@@ -819,6 +822,196 @@ def _mp_diffusion_core(
         bulk_He_profile = (u_fp_n + u_lat_n) / r_vals
         
         return bulk_He_profile, fast_He_profile, lat_He_profile, converged
+
+def _mp_diffusion_core_fv(
+        edges,
+        tT_path, 
+        D_sc,
+        D_v,
+        kappa_1,
+        kappa_2,
+        f,
+        aej_U238, 
+        aej_U235, 
+        aej_Th, 
+        aej_Sm, 
+        init_fast_He,
+        init_lat_He,
+        allow,
+        M,
+        initial_damp,
+    ):
+    """ 
+    Core function for solving diffusion in a crystal with multiple diffusion pathways, a fast path and a volume path, using a finite volume, Crank-Nicolson scheme on a grid of any spacing. Finite volume formulation following Patankar (1980) and Versteeg and Malalasekera (2007); multi-path set-up after Lee and Aldama (1992), adapted by Guenthner et al. (in prep).
+
+    Parameters
+    ----------
+
+    edges: 1D array of floats
+        Radial positions (in micrometers) of the cell edges, from 0 at the grain center to the grain edge. 
+
+    tT_path: 2D array of floats
+        Time temperature history along which to calculate diffusion. Time in seconds.
+
+    D_sc: 1D array of floats
+        Short-circuit diffusivities. Must be units of micrometer2/s and length of np.size(tT_path,0) - 1.
+
+    D_v: 1D array of floats
+        Volume diffusivities. Must be units of micrometer2/s and length of np.size(tT_path,0) - 1.
+
+    kappa_1: float
+        Exchange coefficient from the fast path to the lattice (1/s) 
+    
+    kappa_2: float
+        Exchange coefficient from the lattice to the fast path (1/s), negative
+    
+    f: float
+        Fraction of amorphousness
+
+    aej_U238: 1D array or list
+        Alpha ejected 1D profile for 238U (in atoms/g), must be length of nodes
+
+    aej_U235: 1D array or list
+        Alpha ejected 1D profile for 235U (in atoms/g), must be length of nodes
+    
+    aej_Th: 1D array or list
+        Alpha ejected 1D profile for 232Th (in atoms/g), must be length of nodes
+    
+    aej_Sm: 1D array or list
+        Alpha ejected 1D profile for 147Sm (in atoms/g), must be length of nodes
+    
+    init_fast_He: 1D array
+        1D concentration profile of He in the fast path, must be length of nodes. In concentration, not multiplied by radial position.
+    
+    init_lat_He: 1D array
+        1D concentration profile of He in the fast path, must be length of nodes. In concentration, not multiplied by radial position. 
+    
+    allow: float
+        Allows for alpha production (equals 1.0) or no alpha production (equals 0.0) during diffusion, useful for generating Arrhenius trends.
+
+    M: int
+        Number of sub-divisions for the exponentially increasing damping function.
+
+    initial_damp: int
+        Number of sub-divions for the initial damping.
+    
+    Returns
+    -------
+
+    bulk_He_profile: 1D array of floats
+        The 1D concentraiton profile of diffused He in the bulk grain (units of atoms/g)
+    
+    fast_He_profile: 1D array of floats
+        The 1D concentration profile of diffused He in the fast pathways (units of atoms/g)
+
+    lat_He_profile: 1D array of floats
+        The 1D concentration profile of diffused He in the lattice (units of atoms/g)
+
+    """
+    
+    nodes = edges.size - 1
+
+    # calculate node positions at cell centers, shell volumes (base of 4 * Pi), and face areas (base of 4 * Pi)
+    r_positions = 0.5 * (edges[1:] + edges[:-1])
+    vols = np.diff(edges**3) / 3.0
+    areas = edges**2
+
+    # geometric part of the flux between neighboring nodes through each face (multiplied by D later)
+    # with boundary conditions
+    # face 0 is the grain center (zero flux), the last face is the grain edge, half a cell from the last node, where concentration is zero
+    conduct = np.zeros(nodes + 1)
+    conduct[1:-1] = areas[1:-1] / np.diff(r_positions)
+    conduct[-1] = areas[-1] / (edges[-1] - r_positions[-1])
+
+    # smallest cell sets the Fourier number for sub-dividing time steps
+    r_min = np.min(np.diff(edges))
+
+    # fast path and lattice unknowns are interleaved
+    # x[0::2] is the fast path and x[1::2] is the lattice initials, overwritten with new values at each solve
+    # the matrix is banded with 2 sub- and 2 supra-diagonals
+    x = np.zeros(2 * nodes)
+    x[0::2] = init_fast_He
+    x[1::2] = init_lat_He
+    ab = np.zeros((5, 2 * nodes))
+    rhs = np.zeros(2 * nodes)
+
+    # step through time from old to young
+    for i in range(tT_path.shape[0] - 1):
+
+        dt_int = tT_path[i, 0] - tT_path[i + 1, 0]
+        D_max = max(D_sc[i], D_v[i])
+        fourier = (D_max * dt_int) / r_min**2
+
+        # subdivide the time step if necessary
+        if fourier > 0.5:
+            temp = (tT_path[i, 1] + tT_path[i + 1, 1]) / 2
+            sub_tT_path = _divide_tT(D_max, dt_int, temp, r_min, M, initial_damp)
+            # shift the sub-step times back to real ages for calculating production
+            sub_tT_path[:, 0] += tT_path[i + 1, 0]
+        else:
+            sub_tT_path = tT_path[i:i + 2, :]
+
+        # flux conductances for each pathway
+        cond_sc = D_sc[i] * conduct
+        cond_v = D_v[i] * conduct
+
+        # perform diffusion at sub-interval time spacing
+        for j in range(sub_tT_path.shape[0] - 1):
+            t_old = sub_tT_path[j, 0]
+            t_young = sub_tT_path[j + 1, 0]
+            dt = t_old - t_young
+            half_dt = 0.5 * dt
+
+            # create alpha production array
+            all_alphas = (
+                        8
+                        * aej_U238
+                        * (np.exp(lambda_238 * t_old) - np.exp(lambda_238 * t_young))
+                        + 7
+                        * aej_U235
+                        * (np.exp(lambda_235 * t_old) - np.exp(lambda_235 * t_young))
+                        + 6
+                        * aej_Th
+                        * (np.exp(lambda_232 * t_old) - np.exp(lambda_232 * t_young))
+                        + aej_Sm
+                        * (np.exp(lambda_147 * t_old) - np.exp(lambda_147 * t_young))
+            )
+
+            # net flux into each shell and exchange between pathways at the previous time step
+            fast = x[0::2]
+            lat = x[1::2]
+            flux_sc = np.zeros(nodes + 1)
+            flux_sc[1:-1] = cond_sc[1:-1] * (fast[1:] - fast[:-1])
+            flux_sc[-1] = -cond_sc[-1] * fast[-1]
+            flux_v = np.zeros(nodes + 1)
+            flux_v[1:-1] = cond_v[1:-1] * (lat[1:] - lat[:-1])
+            flux_v[-1] = -cond_v[-1] * lat[-1]
+            exchange = vols * (kappa_1 * fast + kappa_2 * lat)
+
+            # RHS vector, explicit half of Crank-Nicolson plus production
+            rhs[0::2] = vols * fast + half_dt * (flux_sc[1:] - flux_sc[:-1] - exchange) + vols * f * all_alphas * allow
+            rhs[1::2] = vols * lat + half_dt * (flux_v[1:] - flux_v[:-1] + exchange) + vols * (1 - f) * all_alphas * allow
+
+            # LHS banded matrix, implicit half of Crank-Nicolson
+            # main diagonal
+            ab[2, 0::2] = vols + half_dt * (cond_sc[:-1] + cond_sc[1:] + vols * kappa_1)
+            ab[2, 1::2] = vols + half_dt * (cond_v[:-1] + cond_v[1:] - vols * kappa_2)
+            # exchange between pathways within a node (fast path row, lattice column and lattice row, fast path column)
+            ab[1, 1::2] = half_dt * vols * kappa_2
+            ab[3, 0::2] = -half_dt * vols * kappa_1
+            # diffusion between neighboring nodes within each pathway
+            ab[0, 2::2] = -half_dt * cond_sc[1:-1]
+            ab[0, 3::2] = -half_dt * cond_v[1:-1]
+            ab[4, 0:-2:2] = -half_dt * cond_sc[1:-1]
+            ab[4, 1:-2:2] = -half_dt * cond_v[1:-1]
+
+            x = solve_banded((2, 2), ab, rhs)
+
+    fast_He_profile = x[0::2].copy()
+    lat_He_profile = x[1::2].copy()
+    bulk_He_profile = fast_He_profile + lat_He_profile
+
+    return bulk_He_profile, fast_He_profile, lat_He_profile
 
 @jit(nopython=True)
 def _teq_rho_r(
