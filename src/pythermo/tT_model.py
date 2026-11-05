@@ -625,6 +625,10 @@ class tT_model:
             grain_diffs=None, 
             log2_nodes=13,
             divide=True,
+            grid='graded',
+            r_min=None,
+            growth=1.05,
+            r_max=None,
             ):
         '''
         Calculates fractional loss data from step-heating experiment. Corresponding t-T recipe for step-heating needs to be in units of seconds and degrees Celsius. These data can be used for model Arrhenius curves or a Rstep/Rbulk vs. frac_3He data set as used in 4He/3He thermochronomtery. Intended for use with the numerical solution for multi-path diffusion as presented in Guenthner et al. (2026) (doi pending), but simple Crank-Nicolson is also an option.
@@ -638,7 +642,7 @@ class tT_model:
             A string that determines how diffusion will be numerically modeld. Two options: 'MP' uses the multi-path diffusion algorithm of Guenthner et al. (2026), 'CN' uses simple Crank-Nicolson
 
         tolerance: float
-            Convergence criterion for iterative diffusion algorithm
+            Convergence criterion for iterative diffusion algorithm in the finite difference scheme. Not used for the finite volume scheme.
 
         eject: optional boolean
             Allows for a non-alpha ejected diffusion profile. Default is 'True', meaning the profile will be alpha ejected.
@@ -650,10 +654,22 @@ class tT_model:
             A 3 column array that contains user-defined fast-path diffusivities (1st column), lattice diffusivities (2nd column), and bulk diffusivities (3rd column). Number of rows must match the number of heating step and diffusivities must be matched to temperature. Diffusivities must be in units of micrometers**2/second. Default is None, which allows the function to assign predetermined diffusivities in the case of multi-path diffusion.
         
         log2_nodes: optional int
-            The number of nodes (2**log2_nodes) used in the finite difference scheme. Default is 13 (8192 nodes).
+            The number of nodes (2**log2_nodes) of the uniform grid used in the finite difference scheme and for any initial profile. Default is 13 (8192 nodes).
 
-        divide: option boolean
+        divide: optional boolean
             Allows for subdivision of the tT path. Default is 'True', meaning the tT path will be subdivided if the Fourier number is larger than 0.5 for a given step.
+        
+        grid: optional string
+            Sets the type of grid used for multi-path diffusion. Two options: 'graded', which uses the finite volume solver on a rim-graded grid (denser spacing towards the rim), and 'uniform', which uses the finite difference solver on a uniformly spaced grid. An init_profile must still be given on a uniform grid of 2**log2_nodes for nodes (this input profile is then interpolated). Default is 'graded'.
+
+        r_min: optional float
+            Width of the outermost cell of the graded grid (in micrometers). Default is None, which sets it to 1/10 of the shorter diffusion length scale of the first heating step (but no shorter than 1e-10 of the grain radius)
+        
+        growth: optional float
+            Growth factor of cell widths from the rim towards the grain center. Default is 1.05
+
+        r_max: optional float
+            The maximum cell width along the graded grid (in micrometers). Default is None, which sets it to 1/100 of the grain radius.
             
         Returns
         -------
@@ -661,13 +677,15 @@ class tT_model:
         frac_loss_data: list of 3 column arrays 
             A list of 3 column arrays of 10000/T (in K), fractional loss data points, and ln(D/a2) (in 1/s) for each grain input.
 
-        profile_data: list of 3 columns arrays
-            A list of 3 column arrays of bulk He, fast path He, and lattice He concentration profile (in atoms per volume, base of 1/(4/3 * Pi)) for each grain input. If CN diffusion algorithm is used, only the bulk He column contains relevant data.       
+        profile_data: list of 4 columns arrays
+            A list of 4 column arrays of bulk He, fast path He, and lattice He concentration profile (in atoms per volume, base of 1/(4/3 * Pi)); and node position (in micrometers) for each grain input. If CN diffusion algorithm is used, only the bulk He column contains relevant data.       
         
         '''
+        if grid not in ('graded', 'uniform'):
+            raise ValueError('grid must be either "graded" or "uniform"')
+
         tT_in = self._tT_in
         grains = self._grain_in
-
 
         # constants for the e_rho_s calculation, as defined in Flowers et al. (2009)
         eta_q = 0.91
@@ -762,7 +780,35 @@ class tT_model:
                             )
             else:
                 return None
-            
+
+            # set up the grid
+            # node positions of the uniform grid, which is the grid of any user-defined initial profile
+            uniform_r_vals = model_grain.get_r_vals()
+
+            # for multi-path diffusion, switch to a graded grid
+            if diff_type == 'MP' and grid == 'graded':
+                if r_min is not None:
+                    grain_r_min = r_min
+                else:
+                    # diffusivities for the first tT step
+                    first_time = tT_in[0, 0]
+                    first_temp = tT_in[0, 1] + 273.15
+                    
+                    if grain_diffs is not None:
+                        first_fast_diff = grain_diffs[0, 0]
+                        first_lat_diff = grain_diffs[0, 1]
+                    else:
+                        model_grain.set_relevant_tT(np.array([[first_time, first_temp], [0.0, first_temp]]))
+                        first_fast_diffs, first_lat_diffs, _ = model_grain.mp_diffs(dose)
+                        first_fast_diff = first_fast_diffs[0]
+                        first_lat_diff = first_lat_diffs[0]
+
+                    # outermost cell is 1/10 of the shorter diffusion length of the first tT step
+                    # no smaller than 1e-10 of the size of the grain
+                    grain_r_min = max(np.sqrt(min(first_fast_diff, first_lat_diff) * first_time) / 10, 1e-10 * size)
+
+                model_grain.set_graded_grid(grain_r_min, growth, r_max)
+
             # create the initial profile, if no profile provided
             if init_profile is None:
                 # create production lists that consider (or don't) alpha ejection
@@ -788,6 +834,11 @@ class tT_model:
                         * (np.exp(lambda_147 * init_age) - 1)
                         
                 )
+            elif model_grain._graded:
+                # extend the profile to the grain edge, so that rim nodes beyond the last uniform node are not held at its value
+                edge_slope = (init_profile[-1] - init_profile[-2]) / (uniform_r_vals[-1] - uniform_r_vals[-2])
+                edge_He = max(init_profile[-1] + edge_slope * (size - uniform_r_vals[-1]), 0.0)
+                init_He = np.interp(model_grain.get_r_vals(), np.append(uniform_r_vals, size), np.append(init_profile, edge_He))
             else:
                 init_He = init_profile
                 
@@ -809,7 +860,7 @@ class tT_model:
 
             # establish arrays to store frac loss and profile data
             frac_loss_array = np.zeros((np.size(tT_in, 0), 3))
-            profiles = np.zeros((model_grain.get_nodes(), 3))
+            profiles = np.zeros((model_grain.get_nodes(), 4))
 
             # set diffused profiles for first tT step
             fast_He = init_fast_He
@@ -899,6 +950,7 @@ class tT_model:
             profiles[:, 0] = bulk_He
             profiles[:, 1] = fast_He
             profiles[:, 2] = lat_He
+            profiles[:, 3] = model_grain.get_r_vals()
             
             # save arrhenius and profile list for this grain to array of lists for all grains
             frac_loss_data.append(frac_loss_array)

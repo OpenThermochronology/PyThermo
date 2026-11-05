@@ -220,12 +220,12 @@ def test_frac_loss_array_has_three_columns():
 def test_profile_array_columns():
     model = make_model()
     _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6)
-    assert pr[0].shape[1] == 3
+    assert pr[0].shape[1] == 4
 
 def test_profile_rows_match_nodes():
     nodes = 2**8
     model = make_model()
-    _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6, log2_nodes=8)
+    _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6, log2_nodes=8, grid='uniform')
     assert pr[0].shape[0] == nodes
 
 def test_no_nan_in_outputs():
@@ -463,15 +463,15 @@ def test_repeated_identical_steps_monotonic():
 
 def test_default_node_count():
     model = make_model()
-    _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6)
+    _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6, grid='uniform')
     assert pr[0].shape[0] == 2**13
 
 def test_smaller_node_count():
     model = make_model()
-    _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6, log2_nodes=8)
+    _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6, log2_nodes=8, grid='uniform')
     assert pr[0].shape[0] == 2**8
 
 def test_larger_node_count():
     model = make_model()
-    _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6, log2_nodes=14)
+    _, pr = model.step_degas(make_diff_params(), 'MP', 1e-6, log2_nodes=14, grid='uniform')
     assert pr[0].shape[0] == 2**14

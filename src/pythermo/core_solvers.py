@@ -302,7 +302,6 @@ def _CN_diffusion_core(
         a = np.ones(nodes)
         a[-1] = 0.0
         c = np.ones(nodes)
-        c[0] = 0.0
 
         r_positions = (np.arange(nodes) + 0.5) * r_step
 
@@ -400,7 +399,6 @@ def _CN_diffusion_core_banded(
         a = np.ones(nodes)
         a[-1] = 0.0
         c = np.ones(nodes)
-        c[0] = 0.0
 
         r_positions = (np.arange(nodes) + 0.5) * r_step
 
@@ -647,7 +645,6 @@ def _mp_diffusion_core(
         a = np.ones(nodes)
         a[-1] = 0.0
         c = np.ones(nodes)
-        c[0] = 0.0
 
         # maximum number of allowed interations for the while loop
         max_iter = 50
