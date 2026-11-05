@@ -22,12 +22,66 @@ from .constants import (
     gas_constant, 
     ap_density,
 )
-from .core_solvers import _CN_diffusion_core_wrapper, _mp_diffusion_core
+from .core_solvers import _CN_diffusion_core_wrapper, _mp_diffusion_core, _mp_diffusion_core_fv
 import warnings
 
 class crystal:
     def __init__(self):
-        pass
+        # grains start on the uniform finite difference grid
+        self._graded = False
+
+    def set_graded_grid(self, r_min, growth=1.05, r_max=None):
+        """
+        Replaces the uniform grid with a rim-graded grid for the finite volume multi-path solver. Recalculates the cell edges, node positions, shell volumes, number of nodes, and alpha ejection profiles.
+
+        Parameters
+        ----------
+
+        r_min: float
+            Width of the outermost cell (at the edge of the grain) in micrometers.
+
+        growth: optional float
+            The growth factor of cell widths from the edge of the grain toward the center. Default is 1.05.
+
+        r_max: optional float
+            The maximum cell width in micrometers. Default is None, which sets it to 1/100 of the grain radius.
+
+        """
+        if r_max is None:
+            r_max = self._radius / 100
+
+        # the outermost cell can't be wider than the maximum cell width
+        r_min = min(r_min, r_max)
+
+        # set the new grid
+        # cell edges, node positions (cell centers), shell volumes (base of 1/(4/3 * Pi)), and number of nodes
+        self._edges = self._graded_edges(r_min, growth, r_max)
+        self._r_vals = 0.5 * (self._edges[1:] + self._edges[:-1])
+        self._vols = np.diff(self._edges**3)
+        self._nodes = self._edges.size - 1
+
+        # no single grid spacing on a graded grid
+        self._r_step = None
+        self._graded = True
+
+        # recompute alpha ejection profiles on the new grid
+        self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm, self._corr_factors = self.alpha_ejection(
+            self._radius,
+            self._edges,
+            self._U_ppm,
+            self._Th_ppm,
+            self._Sm_ppm,
+            self._mineral,
+        )
+
+        self._no_aej_U238, self._no_aej_U235, self._no_aej_Th, self._no_aej_Sm, self._no_corr_factors = self.alpha_ejection(
+            self._radius,
+            self._edges,
+            self._U_ppm,
+            self._Th_ppm,
+            self._Sm_ppm,
+            'none',
+        )
 
     def alpha_ejection(
             self, radius, edges, U_ppm, Th_ppm, Sm_ppm, mineral_type
@@ -418,6 +472,96 @@ class crystal:
 
         return bulk_He_profile, fast_He_profile, lat_He_profile
     
+    def mp_diffusion_fv(
+        self,
+        edges,
+        tT_path,
+        diff_parameters,
+        aej_U238,
+        aej_U235,
+        aej_Th,
+        aej_Sm,
+        init_fast_He=None,
+        init_lat_He=None,
+        produce=True
+        ):
+        """
+        Wrapper that calls the core function for solving multi-path diffusion with the finite volume, Crank-Nicolson scheme on a grid of any spacing.
+
+        Parameters
+        ----------
+
+        edges: 1D array of floats
+            Radial positions (in micrometers) of the cell edges, from 0 at the grain center to the grain edge.
+
+        tT_path: 2D array of floats
+            Time temperature history along which to calculate diffusion
+
+        diff_parameters: dictionary of floats
+            Fitted parameters for multi-path diffusion. Diffusivities at each time temperature step in tT_path (units of micrometer2/s), must be length of np.size(tT_path,0) - 1.
+
+        aej_U238, aej_U235, aej_Th, aej_Sm: 1D arrays or lists
+            Alpha ejected 1D profiles (in atoms/g), must be length of nodes
+
+        init_fast_He: optional 1D array
+            1D concentration profile of He in the fast path, must be length of nodes. Default is None (zeros). In concentration, not multiplied by radial position.
+
+        init_lat_He: optional 1D array
+            1D concentration profile of He in the lattice, must be length of nodes. Default is None (zeros). In concentration, not multiplied by radial position.
+
+        produce: optional boolean
+            Allows for no alpha production during diffusion, useful for generating Arrhenius trends. Default is 'True'.
+
+        Returns
+        -------
+
+        bulk_He_profile: 1D array of floats
+            The 1D concentration profile of diffused He in the bulk grain (units of atoms/g)
+                
+        fast_He_profile: 1D array of floats
+            The 1D concentration profile of diffused He in the fast pathways (units of atoms/g)
+
+        lat_He_profile: 1D array of floats
+            The 1D concentration profile of diffused He in the lattice (units of atoms/g)
+
+        """
+
+        # damping parameters
+        M = 100
+        initial_damp = 20
+
+        # unpack diff_parameters, D values have to be in units of micrometer**2/s
+        D_sc = diff_parameters['D_sc']
+        D_v = diff_parameters['D_v']
+        kappa_1 = diff_parameters['kappa_1']
+        kappa_2 = diff_parameters['kappa_2']
+        f = diff_parameters['f']
+
+        nodes = edges.size - 1
+        init_fast = np.asarray(init_fast_He, dtype=np.float64) if init_fast_He is not None else np.zeros(nodes)
+        init_lat = np.asarray(init_lat_He, dtype=np.float64) if init_lat_He is not None else np.zeros(nodes)
+
+        bulk_He_profile, fast_He_profile, lat_He_profile = _mp_diffusion_core_fv(
+                edges,
+                tT_path,
+                D_sc,
+                D_v,
+                kappa_1,
+                kappa_2,
+                f,
+                np.asarray(aej_U238, dtype=np.float64),
+                np.asarray(aej_U235, dtype=np.float64),
+                np.asarray(aej_Th, dtype=np.float64),
+                np.asarray(aej_Sm, dtype=np.float64),
+                init_fast,
+                init_lat,
+                1.0 if produce else 0.0,
+                M,
+                initial_damp,
+        )
+
+        return bulk_He_profile, fast_He_profile, lat_He_profile
+    
     def He_date(self, total_He, corr_factors):
         """ 
         Calculate corrected date using a Newton-Raphson method. Precision is set to 1000 years.
@@ -517,9 +661,9 @@ class crystal:
             Allows for the time-temperature history to be sub-divided for better precision on the concentration profile. Useful for laboratory heating schedules with small fractional losses. Default is 'False'.
 
 
-        
         Returns
         ----------
+
         bulk_He_profile: list of floats
             The 1D radial profile of diffused He in the bulk grain
 
@@ -527,6 +671,10 @@ class crystal:
             The total amount of bulk helium present in atoms per spherical volume (base of 1/(4/3 * Pi)) 
 
         """
+        
+        # the finite difference solver needs the uniform grid
+        if self._graded:
+            raise ValueError('CN_profile requires the uniform grid, but set_graded_grid has been called on this grain')
 
         # convert 1D profiles to radial position profiles
         # reflects 1st node position as 0.5 * r_step from grain center
@@ -631,9 +779,10 @@ class crystal:
             total = width + total
             width = min(width * growth, r_max)
 
-        # now order widths from center to edge, rescale to the grain radius, and make sure the last cell ends exactly at the grain edge
-        widths = np.array(width[::-1] * self._radius / total)
+        # now order widths from center to edge, rescale to the grain radius
+        widths = np.array(widths[::-1]) * self._radius / total
         edges = np.concatenate((np.zeros(1), np.cumsum(widths)))
+        # make sure the last cell ends exactly at the grain edge
         edges[-1] = self._radius
 
         return edges
@@ -671,15 +820,19 @@ class zircon(crystal):
     
         """
         super().__init__()
+        self._mineral = 'zircon'
         self._radius = radius
         self._log2_nodes = log2_nodes
         self._nodes = 2**log2_nodes
+        
         # grid spacing in micrometers, nodes are centers of cells with each node at position (k + 0.5) * r_step. The last cell's (k-1) edge is also the grain edge, which is at nodes * r_step
         self._r_step = radius / self._nodes
+        
         # cell edges, node positions (cell centers), and shell volumes (base of 1/(4/3 * Pi))
         self._edges = np.arange(self._nodes + 1) * self._r_step
         self._r_vals = 0.5 * (self._edges[1:] + self._edges[:-1])
         self._vols = np.diff(self._edges**3)
+
         self._U_ppm = U_ppm
         self._Th_ppm = Th_ppm
         self._Sm_ppm = Sm_ppm
@@ -1095,41 +1248,50 @@ class zircon(crystal):
  
         """
 
+        # if the grid is graded, use the finite volume solver (takes and returns concentration profiles)
+
+        if self._graded:
+            if eject:
+                aej = (self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm)
+            else:
+                aej = (self._no_aej_U238, self._no_aej_U235, self._no_aej_Th, self._no_aej_Sm)
+
+            bulk_He_profile, fast_He_profile, lat_He_profile = self.mp_diffusion_fv(
+                self._edges,
+                self._relevant_tT,
+                diff_parameters,
+                *aej,
+                init_fast_He,
+                init_lat_He,
+                produce,
+            )
+
+            bulk_He_profile, total_bulk_He = self._integrate_profile(bulk_He_profile)
+
+            return bulk_He_profile, fast_He_profile, lat_He_profile, total_bulk_He
+
         # convert 1D profiles to radial position profiles
         # reflects 1st node position as 0.5 * r_step from grain center
         init_fast_He = init_fast_He * self._r_vals
         init_lat_He = init_lat_He  * self._r_vals
-
+        
         if eject:
-            bulk_He_profile, fast_He_profile, lat_He_profile = self.mp_diffusion(
-                self._nodes, 
-                self._r_step, 
-                self._relevant_tT, 
-                diff_parameters, 
-                tolerance, 
-                self._aej_U238, 
-                self._aej_U235, 
-                self._aej_Th, 
-                self._aej_Sm, 
-                init_fast_He,
-                init_lat_He,
-                produce,
-            )
+            aej = (self._aej_U238, self._aej_U235, self._aej_Th, self._aej_Sm)
         else:
-            bulk_He_profile, fast_He_profile, lat_He_profile = self.mp_diffusion(
-                self._nodes, 
-                self._r_step, 
-                self._relevant_tT, 
-                diff_parameters, 
-                tolerance, 
-                self._no_aej_U238, 
-                self._no_aej_U235, 
-                self._no_aej_Th, 
-                self._no_aej_Sm, 
-                init_fast_He,
-                init_lat_He,
-                produce,
-            )
+            aej = (self._no_aej_U238, self._no_aej_U235, self._no_aej_Th, self._no_aej_Sm)
+
+
+        bulk_He_profile, fast_He_profile, lat_He_profile = self.mp_diffusion(
+            self._nodes, 
+            self._r_step, 
+            self._relevant_tT, 
+            diff_parameters, 
+            tolerance, 
+            *aej, 
+            init_fast_He,
+            init_lat_He,
+            produce,
+        )
 
         bulk_He_profile, total_bulk_He = self._integrate_profile(bulk_He_profile)
 
@@ -1168,15 +1330,19 @@ class apatite(crystal):
     
         """
         super().__init__()
+        self._mineral = 'apatite'
         self._radius = radius
         self._log2_nodes = log2_nodes
         self._nodes = 2**log2_nodes
+        
         # grid spacing in micrometers, nodes are centers of cells with each node at position (k + 0.5) * r_step. The last cell's (k-1) edge is also the grain edge, which is at nodes * r_step
         self._r_step = radius / self._nodes
+        
         # cell edges, node positions (cell centers), and shell volumes (base of 1/(4/3 * Pi))
         self._edges = np.arange(self._nodes + 1) * self._r_step
         self._r_vals = 0.5 * (self._edges[1:] + self._edges[:-1])
         self._vols = np.diff(self._edges**3)
+        
         self._U_ppm = U_ppm
         self._Th_ppm = Th_ppm
         self._Sm_ppm = Sm_ppm
